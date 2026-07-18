@@ -19,14 +19,19 @@ import {
   type GraphNode,
 } from "@/lib/graph";
 
-const STORAGE_KEY = "atlas-graph:v1";
-const CHANNEL_NAME = "atlas-graph-live";
 const NODE_RADIUS = 48;
 const PALETTE = ["#8b5cf6", "#22d3ee", "#f59e0b", "#f43f5e", "#34d399", "#60a5fa"];
 
 type Point = { x: number; y: number };
 type Viewport = { x: number; y: number; zoom: number };
-type GraphEnvelope = { source: string; graph: GraphData };
+type GraphSummary = {
+  id: string;
+  name: string;
+  thumbnailUrl: string;
+  createdAt: string;
+  updatedAt: string;
+};
+type ExportPreview = { format: "JSON" | "Cypher"; contents: string };
 
 type DragState =
   | { kind: "pan"; start: Point; origin: Point }
@@ -53,28 +58,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function download(name: string, contents: string, mime = "application/json") {
-  const blob = new Blob([contents], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 function graphWithTimestamp(graph: GraphData): GraphData {
   return { ...graph, updatedAt: new Date().toISOString() } as GraphData;
-}
-
-function initialGraph(): GraphData {
-  if (typeof window === "undefined") return normalizeGraph(defaultGraph);
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? normalizeGraph(JSON.parse(stored)) : normalizeGraph(defaultGraph);
-  } catch {
-    return normalizeGraph(defaultGraph);
-  }
 }
 
 function asProperties(value: unknown): Record<string, unknown> {
@@ -95,24 +80,27 @@ function curvePath(source: GraphNode, target: GraphNode) {
 }
 
 export default function GraphEditor() {
-  const [graph, setGraph] = useState<GraphData>(initialGraph);
+  const [graph, setGraph] = useState<GraphData>(() => normalizeGraph(defaultGraph));
   const graphRef = useRef(graph);
+  const [screen, setScreen] = useState<"library" | "editor">("library");
+  const [graphs, setGraphs] = useState<GraphSummary[]>([]);
+  const [libraryStatus, setLibraryStatus] = useState("Carregando grafos…");
+  const [graphId, setGraphId] = useState<string | null>(null);
+  const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [viewport, setViewport] = useState<Viewport>({ x: 360, y: 300, zoom: 1 });
   const [connectSource, setConnectSource] = useState<string | null>(null);
+  const [connectMode, setConnectMode] = useState(false);
   const [propertyError, setPropertyError] = useState("");
-  const [status, setStatus] = useState("Salvo localmente");
+  const [status, setStatus] = useState("Salvo");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const propertyRef = useRef<HTMLTextAreaElement>(null);
+  const exportDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const hydratedRef = useRef(false);
-  const suppressSyncRef = useRef(false);
-  const channelRef = useRef<BroadcastChannel | null>(null);
-  const instanceRef = useRef(uid("client"));
 
   useEffect(() => {
     graphRef.current = graph;
@@ -125,71 +113,96 @@ export default function GraphEditor() {
     });
   }, []);
 
-  useEffect(() => {
-    hydratedRef.current = true;
-
-    const receive = (incoming: unknown) => {
-      try {
-        const envelope = incoming as Partial<GraphEnvelope>;
-        if (envelope.source === instanceRef.current || !envelope.graph) return;
-        const next = normalizeGraph(envelope.graph);
-        if (JSON.stringify(next) === JSON.stringify(graphRef.current)) return;
-        suppressSyncRef.current = true;
-        graphRef.current = next;
-        setGraph(next);
-        setStatus("Atualizado em tempo real");
-      } catch {
-        // Ignore incomplete external writes.
-      }
-    };
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
-      try {
-        const next = normalizeGraph(JSON.parse(event.newValue));
-        if (JSON.stringify(next) === JSON.stringify(graphRef.current)) return;
-        suppressSyncRef.current = true;
-        graphRef.current = next;
-        setGraph(next);
-        setStatus("Atualizado por outra aba");
-      } catch {
-        // Ignore invalid external values.
-      }
-    };
-    const onSameTab = (event: Event) => receive((event as CustomEvent).detail);
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("atlas-graph:update", onSameTab);
-    window.addEventListener("graphstudio:change", onSameTab);
-    if ("BroadcastChannel" in window) {
-      const channel = new BroadcastChannel(CHANNEL_NAME);
-      channel.onmessage = (event) => receive(event.data);
-      channelRef.current = channel;
+  const loadLibrary = useCallback(async () => {
+    setLibraryStatus("Carregando grafos…");
+    try {
+      const response = await fetch("/api/graphs");
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { graphs: GraphSummary[] };
+      setGraphs(payload.graphs);
+      setLibraryStatus(payload.graphs.length ? "" : "Nenhum grafo salvo ainda.");
+    } catch {
+      setLibraryStatus("Não foi possível carregar seus grafos.");
     }
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("atlas-graph:update", onSameTab);
-      window.removeEventListener("graphstudio:change", onSameTab);
-      channelRef.current?.close();
-    };
   }, []);
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (suppressSyncRef.current) {
-      suppressSyncRef.current = false;
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(graph));
-      const envelope: GraphEnvelope = { source: instanceRef.current, graph };
-      channelRef.current?.postMessage(envelope);
-      window.dispatchEvent(new CustomEvent("atlas-graph:changed", { detail: envelope }));
-      window.dispatchEvent(new CustomEvent("graphstudio:change", { detail: envelope }));
-      setStatus("Salvo agora");
-    }, 120);
+    const timer = window.setTimeout(() => void loadLibrary(), 0);
     return () => window.clearTimeout(timer);
-  }, [graph]);
+  }, [loadLibrary]);
+
+  const openGraph = useCallback(async (id: string) => {
+    setLibraryStatus("Abrindo grafo…");
+    try {
+      const response = await fetch(`/api/graphs?id=${encodeURIComponent(id)}`);
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { graph: { id: string; name: string; data: GraphData } };
+      const next = normalizeGraph({ ...payload.graph.data, name: payload.graph.name });
+      graphRef.current = next;
+      setGraph(next);
+      setGraphId(payload.graph.id);
+      setSelectedNodes(new Set());
+      setSelectedEdges(new Set());
+      setViewport({ x: 360, y: 300, zoom: 1 });
+      setStatus("Salvo");
+      setScreen("editor");
+    } catch {
+      setLibraryStatus("Não foi possível abrir este grafo.");
+    }
+  }, []);
+
+  const createGraphRecord = useCallback(async () => {
+    const initial = normalizeGraph({ name: "Novo grafo", version: 1, nodes: [], edges: [] });
+    setLibraryStatus("Criando grafo…");
+    try {
+      const response = await fetch("/api/graphs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: initial.name, graph: initial }),
+      });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { graph: { id: string } };
+      await openGraph(payload.graph.id);
+    } catch {
+      setLibraryStatus("Não foi possível criar o grafo.");
+    }
+  }, [openGraph]);
+
+  const deleteGraphRecord = useCallback(async (item: GraphSummary) => {
+    if (!window.confirm(`Excluir “${item.name}”?`)) return;
+    const response = await fetch(`/api/graphs?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    if (response.ok) await loadLibrary();
+    else setLibraryStatus("Não foi possível excluir o grafo.");
+  }, [loadLibrary]);
+
+  useEffect(() => {
+    if (screen !== "editor" || !graphId) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setStatus("Salvando…");
+      try {
+        const response = await fetch("/api/graphs", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: graphId, name: graph.name, graph }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error();
+        setStatus("Salvo agora");
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setStatus("Erro ao salvar");
+      }
+    }, 800);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [graph, graphId, screen]);
+
+  useEffect(() => {
+    const dialog = exportDialogRef.current;
+    if (exportPreview && dialog && !dialog.open) dialog.showModal();
+  }, [exportPreview]);
 
   const createNode = useCallback(
     (position?: Point, partial: Partial<GraphNode> = {}) => {
@@ -202,6 +215,7 @@ export default function GraphEditor() {
         id,
         label: partial.label || "Novo conceito",
         type: partial.type || "Concept",
+        content: partial.content || "",
         x: partial.x ?? nextPosition.x,
         y: partial.y ?? nextPosition.y,
         z: partial.z ?? 0,
@@ -236,6 +250,7 @@ export default function GraphEditor() {
     setSelectedNodes(new Set());
     setSelectedEdges(new Set());
     setConnectSource(null);
+    setConnectMode(false);
   }, [commitGraph]);
 
   useEffect(() => {
@@ -285,6 +300,7 @@ export default function GraphEditor() {
       }
       if (event.key === "Escape") {
         setConnectSource(null);
+        setConnectMode(false);
         setSelectedNodes(new Set());
         setSelectedEdges(new Set());
       }
@@ -333,6 +349,7 @@ export default function GraphEditor() {
   const beginNodeDrag = (event: ReactPointerEvent<SVGGElement>, node: GraphNode) => {
     event.stopPropagation();
     if (event.button !== 0) return;
+    if (connectMode) return;
     const nextSelection = new Set(selectedNodes);
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       if (nextSelection.has(node.id)) nextSelection.delete(node.id);
@@ -403,16 +420,55 @@ export default function GraphEditor() {
   };
 
   const handleNodeClick = (event: ReactPointerEvent<SVGGElement>, node: GraphNode) => {
-    if (!connectSource) return;
+    if (!connectMode) return;
     event.stopPropagation();
-    if (connectSource !== node.id) createEdge(connectSource, node.id);
+    if (!connectSource) {
+      setConnectSource(node.id);
+      setStatus("Agora escolha o nó de destino");
+      return;
+    }
+    if (connectSource === node.id) {
+      setStatus("Escolha outro nó como destino");
+      return;
+    }
+    createEdge(connectSource, node.id);
     setConnectSource(null);
+    setConnectMode(false);
+    setStatus("Conexão criada");
   };
 
   const startConnecting = () => {
-    if (selectedNodes.size !== 1) return;
-    setConnectSource([...selectedNodes][0]);
-    setStatus("Clique no nó de destino");
+    if (connectMode) {
+      setConnectMode(false);
+      setConnectSource(null);
+      setStatus("Conexão cancelada");
+      return;
+    }
+    const selected = selectedNodes.size === 1 ? [...selectedNodes][0] : null;
+    setConnectMode(true);
+    setConnectSource(selected);
+    setStatus(selected ? "Escolha o nó de destino" : "Escolha o nó de origem");
+  };
+
+  const handleConnectionPort = (event: ReactPointerEvent<SVGCircleElement>, node: GraphNode) => {
+    event.stopPropagation();
+    if (!connectMode) {
+      setConnectMode(true);
+      setConnectSource(node.id);
+      setStatus("Escolha o nó de destino");
+      return;
+    }
+    if (!connectSource) {
+      setConnectSource(node.id);
+      setStatus("Agora escolha o nó de destino");
+      return;
+    }
+    if (connectSource !== node.id) {
+      createEdge(connectSource, node.id);
+      setStatus("Conexão criada");
+      setConnectSource(null);
+      setConnectMode(false);
+    }
   };
 
   const fitGraph = () => {
@@ -438,8 +494,36 @@ export default function GraphEditor() {
     });
   };
 
-  const exportJson = () => download("atlas-graph.json", JSON.stringify(graph, null, 2));
-  const exportCypher = () => download("atlas-graph.cypher", graphToCypher(graph), "text/plain");
+  const exportJson = () => setExportPreview({ format: "JSON", contents: JSON.stringify(graph, null, 2) });
+  const exportCypher = () => setExportPreview({ format: "Cypher", contents: graphToCypher(graph) });
+
+  const copyExport = async () => {
+    if (!exportPreview) return;
+    try {
+      await navigator.clipboard.writeText(exportPreview.contents);
+      setStatus("Copiado");
+    } catch {
+      setStatus("Selecione o texto para copiar");
+    }
+  };
+
+  const returnToLibrary = async () => {
+    if (graphId) {
+      setStatus("Salvando…");
+      try {
+        await fetch("/api/graphs", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: graphId, name: graph.name, graph }),
+        });
+      } catch {
+        // The library reload will surface connectivity problems.
+      }
+    }
+    setGraphId(null);
+    setScreen("library");
+    await loadLibrary();
+  };
 
   const importGraph = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -486,16 +570,55 @@ export default function GraphEditor() {
     }
   };
 
+  if (screen === "library") {
+    return (
+      <main className="graph-library" aria-label="Biblioteca de grafos">
+        <header className="library-topbar">
+          <div className="brand" aria-label="Lattice Knowledge Graph">
+            <span className="brand-mark">L</span>
+            <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
+          </div>
+          <button className="primary" onClick={() => void createGraphRecord()}>＋ Novo grafo</button>
+        </header>
+        <section className="library-content">
+          <div className="library-heading">
+            <div><small>SEUS GRAFOS</small><h1>Biblioteca</h1></div>
+            <span>{graphs.length} {graphs.length === 1 ? "grafo" : "grafos"}</span>
+          </div>
+          {libraryStatus && <p className="library-status">{libraryStatus}</p>}
+          <div className="graph-grid">
+            {graphs.map((item) => (
+              <article className="graph-card" key={item.id}>
+                <button className="graph-card-open" onClick={() => void openGraph(item.id)} aria-label={`Abrir ${item.name}`}>
+                  {/* Stored SVG thumbnails are already optimized and cache-versioned. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                  <span><strong>{item.name}</strong><small>Atualizado {new Date(item.updatedAt).toLocaleDateString("pt-BR")}</small></span>
+                </button>
+                <button className="graph-card-delete" onClick={() => void deleteGraphRecord(item)} aria-label={`Excluir ${item.name}`} title="Excluir grafo">×</button>
+              </article>
+            ))}
+            <button className="graph-card graph-card-new" onClick={() => void createGraphRecord()}>
+              <span>＋</span><strong>Criar novo grafo</strong><small>Comece com um canvas vazio</small>
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="graph-shell" aria-label="Editor visual de grafo">
       <header className="topbar">
-        <div className="brand" aria-label="Atlas Knowledge Graph">
-          <span className="brand-mark">A</span>
-          <span><strong>ATLAS</strong><small>KNOWLEDGE GRAPH</small></span>
+        <button className="library-back" onClick={() => void returnToLibrary()} title="Voltar à biblioteca">←</button>
+        <div className="brand" aria-label="Lattice Knowledge Graph">
+          <span className="brand-mark">L</span>
+          <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
         </div>
+        <input className="graph-name-input" aria-label="Nome do grafo" value={graph.name || ""} onChange={(event) => commitGraph((current) => ({ ...current, name: event.target.value }))} />
         <nav className="toolbar" aria-label="Ferramentas do grafo">
           <button onClick={() => createNode()} title="Adicionar nó">＋ Nó</button>
-          <button onClick={startConnecting} disabled={selectedNodes.size !== 1} className={connectSource ? "active" : ""} title="Conectar o nó selecionado">↗ Conectar</button>
+          <button onClick={startConnecting} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
           <button onClick={deleteSelection} disabled={!selectedNodes.size && !selectedEdges.size} title="Excluir seleção">⌫ Excluir</button>
           <span className="divider" />
           <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
@@ -513,8 +636,8 @@ export default function GraphEditor() {
 
       <section className="workspace">
         <div className="canvas-wrap">
-          {connectSource && (
-            <div className="connect-hint">Escolha o nó de destino <button onClick={() => setConnectSource(null)}>Cancelar</button></div>
+          {connectMode && (
+            <div className="connect-hint">{connectSource ? "Escolha o nó de destino" : "Escolha o nó de origem"} <button onClick={() => { setConnectMode(false); setConnectSource(null); }}>Cancelar</button></div>
           )}
           {helpOpen && (
             <div className="help-card">
@@ -529,7 +652,7 @@ export default function GraphEditor() {
           )}
           <svg
             ref={svgRef}
-            className={connectSource ? "graph-canvas connecting" : "graph-canvas"}
+            className={connectMode ? "graph-canvas connecting" : "graph-canvas"}
             onPointerDown={beginPan}
             onPointerMove={movePointer}
             onPointerUp={endPointer}
@@ -618,7 +741,7 @@ export default function GraphEditor() {
                   return (
                     <g
                       key={node.id}
-                      className={`node${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}`}
+                      className={`node${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
                       onPointerDown={(event) => beginNodeDrag(event, node)}
@@ -631,6 +754,8 @@ export default function GraphEditor() {
                       <circle r={NODE_RADIUS} fill={node.color} stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
                       <circle r={NODE_RADIUS - 1} fill="url(#node-surface)" />
                       <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
+                      <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
+                      <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
                       <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
                       <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
                     </g>
@@ -665,6 +790,7 @@ export default function GraphEditor() {
                   <label>Profundidade<input type="number" min="-10" max="10" value={selectedNode.z || 0} onChange={(event) => updateSelectedNode({ z: Number(event.target.value) })} /></label>
                 </div>
                 <label>Propriedades (JSON)<textarea ref={propertyRef} key={`node-properties-${selectedNode.id}`} spellCheck={false} defaultValue={JSON.stringify(asProperties(selectedNode.properties), null, 2)} onBlur={saveProperties} /></label>
+                <label>Content<textarea value={selectedNode.content || ""} onChange={(event) => updateSelectedNode({ content: event.target.value })} /></label>
                 {propertyError && <p className="error">{propertyError}</p>}
                 <button className="wide primary" onClick={saveProperties}>Aplicar propriedades</button>
               </div>
@@ -682,6 +808,18 @@ export default function GraphEditor() {
           </aside>
         )}
       </section>
+
+      <dialog ref={exportDialogRef} className="dialog export-dialog" aria-labelledby="export-dialog-title" onClose={() => setExportPreview(null)}>
+        <div className="dialog-header">
+          <h2 className="dialog-title" id="export-dialog-title">Exportar {exportPreview?.format}</h2>
+          <button className="icon-button" onClick={() => exportDialogRef.current?.close()} aria-label="Fechar">×</button>
+        </div>
+        <div className="dialog-body"><pre className="export-code"><code>{exportPreview?.contents}</code></pre></div>
+        <div className="dialog-footer">
+          <button onClick={() => exportDialogRef.current?.close()}>Fechar</button>
+          <button className="primary" onClick={() => void copyExport()}>Copiar</button>
+        </div>
+      </dialog>
 
       <style>{`
         .graph-shell{height:100dvh;min-height:620px;display:flex;flex-direction:column;color:#e8edf8;background:#080b14;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}

@@ -6,6 +6,7 @@ export interface Node {
   id: string;
   label: string;
   type: string;
+  content?: string;
   labels?: string[];
   x: number;
   y: number;
@@ -246,6 +247,7 @@ function normalizeNode(value: unknown, index: number): Node {
     id: stringAt(input.id, `${path}.id`, `node-${index + 1}`),
     label,
     type,
+    ...(typeof input.content === "string" ? { content: input.content } : {}),
     ...(labels?.length ? { labels } : {}),
     x: finiteNumberAt(input.x ?? position?.x, `${path}.x`, index * 160),
     y: finiteNumberAt(input.y ?? position?.y, `${path}.y`, 0),
@@ -393,6 +395,7 @@ export function graphToCypher(input: GraphData | unknown): string {
     const properties: GraphProperties = { ...node.properties };
     if (!("id" in properties)) properties.id = node.id;
     if (!("name" in properties)) properties.name = node.label;
+    if (node.content && !("content" in properties)) properties.content = node.content;
     const labels = [...new Set([node.type, ...(node.labels ?? [])])]
       .map((label) => `:${cypherIdentifier(label)}`)
       .join("");
