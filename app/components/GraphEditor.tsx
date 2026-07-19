@@ -26,6 +26,13 @@ const PALETTE = ["#8b5cf6", "#22d3ee", "#f59e0b", "#f43f5e", "#34d399", "#60a5fa
 
 type Point = { x: number; y: number };
 type Viewport = { x: number; y: number; zoom: number };
+type CanvasMode = "edit" | "view";
+type PinchState = {
+  ids: [number, number];
+  startDistance: number;
+  startZoom: number;
+  worldAtMidpoint: Point;
+};
 type GraphSummary = {
   id: string;
   name: string;
@@ -66,6 +73,14 @@ function uid(prefix: string) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function pointDistance(a: Point, b: Point) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function pointMidpoint(a: Point, b: Point): Point {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
 function graphWithTimestamp(graph: GraphData): GraphData {
@@ -148,6 +163,7 @@ export default function GraphEditor() {
   const [viewport, setViewport] = useState<Viewport>({ x: 360, y: 300, zoom: 1 });
   const [connectSource, setConnectSource] = useState<string | null>(null);
   const [connectMode, setConnectMode] = useState(false);
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>("edit");
   const [propertyError, setPropertyError] = useState("");
   const [categoryCreatorOpen, setCategoryCreatorOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -166,10 +182,17 @@ export default function GraphEditor() {
   const panHoldTimeoutRef = useRef<number | null>(null);
   const panHoldIntervalRef = useRef<number | null>(null);
   const panAnimationRef = useRef<number | null>(null);
+  const viewportRef = useRef(viewport);
+  const touchPointsRef = useRef(new Map<number, Point>());
+  const pinchRef = useRef<PinchState | null>(null);
 
   useEffect(() => {
     graphRef.current = graph;
   }, [graph]);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 800px)").matches) setInspectorOpen(false);
@@ -416,7 +439,70 @@ export default function GraphEditor() {
     [viewport],
   );
 
+  const beginTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== "touch") return;
+    touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (touchPointsRef.current.size < 2) return;
+
+    const [first, second] = [...touchPointsRef.current.entries()].slice(-2);
+    const center = pointMidpoint(first[1], second[1]);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
+    const view = viewportRef.current;
+    dragRef.current = null;
+    pinchRef.current = {
+      ids: [first[0], second[0]],
+      startDistance: Math.max(pointDistance(first[1], second[1]), 1),
+      startZoom: view.zoom,
+      worldAtMidpoint: {
+        x: localCenter.x / view.zoom - view.x,
+        y: localCenter.y / view.zoom - view.y,
+      },
+    };
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const moveTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== "touch" || !touchPointsRef.current.has(event.pointerId)) return;
+    touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pinch = pinchRef.current;
+    if (!pinch) return;
+    const first = touchPointsRef.current.get(pinch.ids[0]);
+    const second = touchPointsRef.current.get(pinch.ids[1]);
+    if (!first || !second) return;
+
+    const center = pointMidpoint(first, second);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
+    const nextZoom = clamp(
+      pinch.startZoom * pointDistance(first, second) / pinch.startDistance,
+      0.2,
+      3.5,
+    );
+    setViewport({
+      zoom: nextZoom,
+      x: localCenter.x / nextZoom - pinch.worldAtMidpoint.x,
+      y: localCenter.y / nextZoom - pinch.worldAtMidpoint.y,
+    });
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const endTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== "touch") return;
+    const wasPinching = Boolean(pinchRef.current);
+    touchPointsRef.current.delete(event.pointerId);
+    if (touchPointsRef.current.size < 2) pinchRef.current = null;
+    if (!wasPinching) return;
+    dragRef.current = null;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const beginPan = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (pinchRef.current) return;
     if (event.button !== 0 && event.button !== 1) return;
     if (event.target !== event.currentTarget && (event.target as SVGElement).dataset.canvas !== "true") return;
     if (panAnimationRef.current !== null) window.cancelAnimationFrame(panAnimationRef.current);
@@ -434,6 +520,7 @@ export default function GraphEditor() {
   };
 
   const beginNodeDrag = (event: ReactPointerEvent<SVGGElement>, node: GraphNode) => {
+    if (canvasMode === "view" || pinchRef.current) return;
     event.stopPropagation();
     if (event.button !== 0) return;
     if (connectMode) return;
@@ -458,6 +545,7 @@ export default function GraphEditor() {
   };
 
   const movePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (pinchRef.current) return;
     const drag = dragRef.current;
     if (!drag) return;
     if (drag.kind === "pan") {
@@ -481,6 +569,7 @@ export default function GraphEditor() {
   };
 
   const endPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (pinchRef.current) return;
     if (dragRef.current?.kind === "nodes") {
       commitGraph((current) => current);
     }
@@ -507,7 +596,7 @@ export default function GraphEditor() {
   };
 
   const handleNodeClick = (event: ReactPointerEvent<SVGGElement>, node: GraphNode) => {
-    if (!connectMode) return;
+    if (canvasMode === "view" || !connectMode) return;
     event.stopPropagation();
     if (!connectSource) {
       setConnectSource(node.id);
@@ -577,9 +666,27 @@ export default function GraphEditor() {
   useEffect(() => () => {
     stopPanHold();
     stopPanAnimation();
+    touchPointsRef.current.clear();
+    pinchRef.current = null;
   }, [stopPanAnimation, stopPanHold]);
 
+  const selectCanvasMode = (mode: CanvasMode) => {
+    dragRef.current = null;
+    setCanvasMode(mode);
+    if (mode === "view") {
+      setConnectMode(false);
+      setConnectSource(null);
+      setSelectedNodes(new Set());
+      setSelectedEdges(new Set());
+      setInspectorOpen(false);
+      setStatus("Modo visualização");
+    } else {
+      setStatus("Modo edição");
+    }
+  };
+
   const startConnecting = () => {
+    if (canvasMode === "view") return;
     if (connectMode) {
       setConnectMode(false);
       setConnectSource(null);
@@ -594,6 +701,7 @@ export default function GraphEditor() {
 
   const handleConnectionPort = (event: ReactPointerEvent<SVGCircleElement>, node: GraphNode) => {
     event.stopPropagation();
+    if (canvasMode === "view") return;
     if (!connectMode) {
       setConnectMode(true);
       setConnectSource(node.id);
@@ -812,12 +920,12 @@ export default function GraphEditor() {
         </div>
         <CommittedTextInput className="graph-name-input" ariaLabel="Nome do grafo" value={graph.name || ""} onCommit={(name) => commitGraph((current) => ({ ...current, name }))} />
         <nav className="toolbar" aria-label="Ferramentas do grafo">
-          <button onClick={() => createNode()} title="Adicionar nó">＋ Nó</button>
-          <button onClick={startConnecting} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
-          <button onClick={deleteSelection} disabled={!selectedNodes.size && !selectedEdges.size} title="Excluir seleção">⌫ Excluir</button>
+          <button onClick={() => createNode()} disabled={canvasMode === "view"} title="Adicionar nó">＋ Nó</button>
+          <button onClick={startConnecting} disabled={canvasMode === "view"} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
+          <button onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} title="Excluir seleção">⌫ Excluir</button>
           <span className="divider" />
           <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
-          <button onClick={() => fileRef.current?.click()} title="Importar JSON">⇧ Importar</button>
+          <button onClick={() => fileRef.current?.click()} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
           <button onClick={exportJson} title="Exportar JSON">↓ JSON</button>
           <button className="primary" onClick={exportCypher} title="Exportar consultas Cypher">↓ Cypher</button>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
@@ -833,7 +941,7 @@ export default function GraphEditor() {
         <div className="canvas-wrap">
           {mobileHintOpen && (
             <div className="mobile-gesture-tip" role="status">
-              <span>Use as setas abaixo para mover sem puxar o navegador.</span>
+              <span>Use as setas ou dois dedos para mover e dar zoom.</span>
               <button onClick={() => setMobileHintOpen(false)} aria-label="Fechar dica">×</button>
             </div>
           )}
@@ -853,14 +961,18 @@ export default function GraphEditor() {
           )}
           <svg
             ref={svgRef}
-            className={connectMode ? "graph-canvas connecting" : "graph-canvas"}
+            className={`graph-canvas${connectMode ? " connecting" : ""}${canvasMode === "view" ? " view-mode" : ""}`}
+            onPointerDownCapture={beginTouchGesture}
+            onPointerMoveCapture={moveTouchGesture}
+            onPointerUpCapture={endTouchGesture}
+            onPointerCancelCapture={endTouchGesture}
             onPointerDown={beginPan}
             onPointerMove={movePointer}
             onPointerUp={endPointer}
             onPointerCancel={endPointer}
             onWheel={zoomCanvas}
             onDoubleClick={(event) => {
-              if (event.target === event.currentTarget || (event.target as SVGElement).dataset.canvas === "true") {
+              if (canvasMode === "edit" && (event.target === event.currentTarget || (event.target as SVGElement).dataset.canvas === "true")) {
                 createNode(screenToWorld(event.clientX, event.clientY));
               }
             }}
@@ -911,6 +1023,7 @@ export default function GraphEditor() {
                       role="button"
                       aria-label={`Relação ${edge.type}, de ${source.label} para ${target.label}`}
                       onPointerDown={(event) => {
+                        if (canvasMode === "view") return;
                         event.stopPropagation();
                         setPropertyError("");
                         setSelectedNodes(new Set());
@@ -987,6 +1100,22 @@ export default function GraphEditor() {
                   {control.label}
                 </button>
               ))}
+            </div>
+            <div className="mobile-mode-switch" role="group" aria-label="Modo do canvas">
+              <button
+                className={canvasMode === "edit" ? "active" : ""}
+                aria-pressed={canvasMode === "edit"}
+                aria-label="Modo edição"
+                title="Editar"
+                onClick={() => selectCanvasMode("edit")}
+              >✎</button>
+              <button
+                className={canvasMode === "view" ? "active" : ""}
+                aria-pressed={canvasMode === "view"}
+                aria-label="Modo visualização"
+                title="Visualizar"
+                onClick={() => selectCanvasMode("view")}
+              >◎</button>
             </div>
             <div className="zoom-control">
               <button onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom / 1.2, .2, 3.5) }))}>−</button>

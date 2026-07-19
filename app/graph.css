@@ -44,6 +44,13 @@ body {
   font-family: var(--font-geist-sans), Inter, ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:where(input, textarea, select, [contenteditable]:not([contenteditable="false"])) {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button,
@@ -1851,6 +1858,11 @@ pre.export-code {
   cursor: crosshair;
 }
 
+.graph-shell .graph-canvas.view-mode .node,
+.graph-shell .graph-canvas.view-mode .edge {
+  pointer-events: none;
+}
+
 .graph-shell .node {
   cursor: grab;
 }
@@ -1943,6 +1955,7 @@ pre.export-code {
 }
 
 .graph-shell .mobile-pan-control,
+.graph-shell .mobile-mode-switch,
 .graph-shell .mobile-gesture-tip {
   display: none;
 }
@@ -2366,7 +2379,7 @@ pre.export-code {
   }
 
   .graph-shell .mobile-pan-control {
-    margin-right: auto;
+    margin-right: 0;
   }
 
   .graph-shell .mobile-pan-control small {
@@ -2643,6 +2656,37 @@ pre.export-code {
     backdrop-filter: blur(15px);
   }
 
+  .graph-shell .mobile-mode-switch {
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    gap: 2px;
+    border: 1px solid rgba(145, 163, 226, 0.18);
+    border-radius: 13px;
+    background: rgba(10, 14, 31, 0.9);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.04);
+    pointer-events: auto;
+    backdrop-filter: blur(15px);
+  }
+
+  .graph-shell .mobile-mode-switch button {
+    width: 34px;
+    height: 36px;
+    min-width: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    color: #687492;
+    background: transparent;
+    font-size: 15px;
+  }
+
+  .graph-shell .mobile-mode-switch button.active {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(88, 127, 226, 0.8), rgba(114, 88, 223, 0.8));
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.14);
+  }
+
   .graph-shell .mobile-pan-control small {
     padding: 0 5px;
     color: #687492;
@@ -2674,5 +2718,17 @@ pre.export-code {
 @media (pointer: coarse) and (max-width: 540px) {
   .graph-shell .mobile-pan-control small {
     display: none;
+  }
+
+  .graph-shell .mobile-pan-control button,
+  .graph-shell .zoom-control button {
+    width: 36px;
+    height: 38px;
+    min-width: 36px;
+    font-size: 16px;
+  }
+
+  .graph-shell .zoom-control span {
+    width: 32px;
   }
 }

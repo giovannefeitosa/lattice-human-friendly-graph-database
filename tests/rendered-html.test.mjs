@@ -36,3 +36,20 @@ test("includes the requested editor capabilities", async () => {
   assert.match(hosting, /"r2": "THUMBNAILS"/);
   assert.match(schema, /sqliteTable\(\s*"graphs"/);
 });
+
+test("includes mobile navigation and compact exploration behaviors", async () => {
+  const [editor, explorer, styles] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/GraphExplorer.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(editor, /mobile-mode-switch/);
+  assert.match(editor, /canvasMode === "view"/);
+  assert.match(editor, /beginTouchGesture/);
+  assert.match(editor, /pointDistance/);
+  assert.match(explorer, /setSelectedId\(\(current\) => current === node\.id \? null : node\.id\)/);
+  assert.match(explorer, /aria-label="Voltar ao gráfico"[^>]*>←<\/button>/);
+  assert.match(explorer, /onPointerDownCapture=\{beginTouchGesture\}/);
+  assert.match(styles, /body[\s\S]*user-select: none/);
+  assert.match(styles, /:where\(input, textarea, select/);
+});
