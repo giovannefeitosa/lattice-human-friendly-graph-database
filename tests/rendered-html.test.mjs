@@ -24,8 +24,13 @@ test("includes the requested editor capabilities", async () => {
   assert.match(editor, /<dialog[\s\S]*Exportar/);
   assert.doesNotMatch(editor, /anchor\.download|URL\.createObjectURL/);
   assert.match(editor, /<label>Content<textarea/);
+  assert.match(editor, /CommittedTextInput/);
+  assert.match(editor, /Criar e selecionar/);
+  assert.match(editor, /Cor da categoria/);
   assert.match(editor, /connection-port-hit/);
   assert.match(graph, /content\?: string/);
+  assert.match(graph, /categories: NodeCategory\[\]/);
+  assert.match(graph, /categoryId: string/);
   assert.match(graph, /properties\.content = node\.content/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "THUMBNAILS"/);

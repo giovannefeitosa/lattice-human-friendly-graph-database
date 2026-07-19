@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
 import { graphs } from "@/db/schema";
-import { normalizeGraph } from "@/lib/graph";
+import { GraphValidationError, normalizeGraph } from "@/lib/graph";
 import { graphContentHash, graphThumbnailSvg } from "@/lib/graph-thumbnail";
 
 type GraphPayload = {
@@ -18,7 +18,7 @@ async function ownerEmail() {
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
-  return Response.json({ error: message }, { status: 500 });
+  return Response.json({ error: message }, { status: error instanceof GraphValidationError ? 400 : 500 });
 }
 
 export async function GET(request: Request) {

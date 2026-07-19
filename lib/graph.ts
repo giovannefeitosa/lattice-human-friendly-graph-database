@@ -2,9 +2,16 @@ export type GraphScalar = string | number | boolean | null;
 export type GraphValue = GraphScalar | GraphScalar[];
 export type GraphProperties = Record<string, GraphValue>;
 
+export interface NodeCategory {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface Node {
   id: string;
   label: string;
+  categoryId: string;
   type: string;
   content?: string;
   labels?: string[];
@@ -12,7 +19,7 @@ export interface Node {
   y: number;
   z?: number;
   properties: GraphProperties;
-  color?: string;
+  color: string;
 }
 
 export interface Edge {
@@ -30,6 +37,7 @@ export type GraphNode = Node;
 export type GraphEdge = Edge;
 
 export interface GraphData {
+  categories: NodeCategory[];
   nodes: Node[];
   edges: Edge[];
   name?: string;
@@ -45,11 +53,17 @@ export class GraphValidationError extends Error {
 
 export const defaultGraph: GraphData = {
   name: "Action & Dopamine",
-  version: 1,
+  version: 2,
+  categories: [
+    { id: "concept", name: "Concept", color: "#f5f7ff" },
+    { id: "brain-region", name: "BrainRegion", color: "#8ba6ff" },
+    { id: "trait", name: "Trait", color: "#ff8e8e" },
+  ],
   nodes: [
     {
       id: "action",
       label: "ACTION",
+      categoryId: "concept",
       type: "Concept",
       x: 0,
       y: 20,
@@ -60,6 +74,7 @@ export const defaultGraph: GraphData = {
     {
       id: "nucleus-accumbens",
       label: "Nucleus Accumbens (Dopamine)",
+      categoryId: "brain-region",
       type: "BrainRegion",
       x: 0,
       y: -230,
@@ -70,16 +85,18 @@ export const defaultGraph: GraphData = {
     {
       id: "emotions",
       label: "Emotions",
+      categoryId: "concept",
       type: "Concept",
       x: 285,
       y: -35,
       z: 45,
       properties: { category: "affect" },
-      color: "#c69cff",
+      color: "#f5f7ff",
     },
     {
       id: "impulsivity",
       label: "Impulsivity",
+      categoryId: "trait",
       type: "Trait",
       x: -280,
       y: -35,
@@ -90,12 +107,13 @@ export const defaultGraph: GraphData = {
     {
       id: "frontal-lobe",
       label: "Frontal Lobe",
+      categoryId: "brain-region",
       type: "BrainRegion",
       x: -185,
       y: 230,
       z: -25,
       properties: { function: "executive control" },
-      color: "#f5de4b",
+      color: "#8ba6ff",
     },
   ],
   edges: [
@@ -220,7 +238,84 @@ function optionalString(value: unknown, path: string): string | undefined {
   return stringAt(value, path);
 }
 
-function normalizeNode(value: unknown, index: number): Node {
+const CATEGORY_COLORS = ["#8b5cf6", "#22d3ee", "#f59e0b", "#f43f5e", "#34d399", "#60a5fa"];
+
+function colorAt(value: unknown, path: string, fallback?: string): string {
+  if ((value === undefined || value === null || value === "") && fallback) return fallback;
+  if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) {
+    throw new GraphValidationError(`${path} must be a #RRGGBB color.`);
+  }
+  return value.toLowerCase();
+}
+
+function categoryKey(name: string) {
+  return name.trim().toLocaleLowerCase("pt-BR");
+}
+
+function categoryId(name: string, used: Set<string>) {
+  const base = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "categoria";
+  let id = base;
+  let suffix = 2;
+  while (used.has(id)) id = `${base}-${suffix++}`;
+  used.add(id);
+  return id;
+}
+
+function normalizeCategories(root: Record<string, unknown>) {
+  if (root.categories !== undefined) {
+    if (!Array.isArray(root.categories)) {
+      throw new GraphValidationError("graph.categories must be an array.");
+    }
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    return root.categories.map((value, index): NodeCategory => {
+      const input = recordAt(value, `categories[${index}]`);
+      const id = stringAt(input.id, `categories[${index}].id`);
+      const name = stringAt(input.name, `categories[${index}].name`);
+      const key = categoryKey(name);
+      if (ids.has(id)) throw new GraphValidationError(`Duplicate category id: "${id}".`);
+      if (names.has(key)) throw new GraphValidationError(`Duplicate category name: "${name}".`);
+      ids.add(id);
+      names.add(key);
+      return { id, name, color: colorAt(input.color, `categories[${index}].color`) };
+    });
+  }
+
+  const nodes = Array.isArray(root.nodes) ? root.nodes : [];
+  const categories: NodeCategory[] = [];
+  const byName = new Map<string, NodeCategory>();
+  const usedIds = new Set<string>();
+  for (let index = 0; index < nodes.length; index += 1) {
+    const input = recordAt(nodes[index], `nodes[${index}]`);
+    const rawLabels = Array.isArray(input.labels) ? input.labels : [];
+    const name = stringAt(input.type ?? rawLabels[0], `nodes[${index}].type`, "Concept");
+    const key = categoryKey(name);
+    if (byName.has(key)) continue;
+    const category = {
+      id: categoryId(name, usedIds),
+      name,
+      color: colorAt(input.color, `nodes[${index}].color`, CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]),
+    };
+    byName.set(key, category);
+    categories.push(category);
+  }
+  if (!categories.length) {
+    categories.push({ id: "conceito", name: "Conceito", color: CATEGORY_COLORS[0] });
+  }
+  return categories;
+}
+
+function normalizeNode(
+  value: unknown,
+  index: number,
+  categories: NodeCategory[],
+  legacyCategories: boolean,
+): Node {
   const path = `nodes[${index}]`;
   const input = recordAt(value, path);
   const position =
@@ -242,11 +337,18 @@ function normalizeNode(value: unknown, index: number): Node {
       stringAt(item, `${path}.labels[${labelIndex}]`),
     ))];
   }
-  const type = stringAt(input.type ?? labels?.[0], `${path}.type`, "Concept");
+  const legacyType = stringAt(input.type ?? labels?.[0], `${path}.type`, "Concept");
+  const category = legacyCategories
+    ? categories.find((item) => categoryKey(item.name) === categoryKey(legacyType))
+    : categories.find((item) => item.id === input.categoryId);
+  if (!category) {
+    throw new GraphValidationError(`${path}.categoryId must reference an existing category.`);
+  }
   return {
     id: stringAt(input.id, `${path}.id`, `node-${index + 1}`),
     label,
-    type,
+    categoryId: category.id,
+    type: category.name,
     ...(typeof input.content === "string" ? { content: input.content } : {}),
     ...(labels?.length ? { labels } : {}),
     x: finiteNumberAt(input.x ?? position?.x, `${path}.x`, index * 160),
@@ -255,9 +357,7 @@ function normalizeNode(value: unknown, index: number): Node {
       ? { z: finiteNumberAt(input.z ?? position?.z, `${path}.z`, 0) }
       : {}),
     properties: propertiesAt(input.properties, `${path}.properties`),
-    ...(optionalString(input.color, `${path}.color`)
-      ? { color: optionalString(input.color, `${path}.color`) }
-      : {}),
+    color: category.color,
   };
 }
 
@@ -303,7 +403,9 @@ export function normalizeGraph(input: unknown): GraphData {
     throw new GraphValidationError("graph.edges must be an array.");
   }
 
-  const nodes = root.nodes.map(normalizeNode);
+  const legacyCategories = root.categories === undefined;
+  const categories = normalizeCategories(root);
+  const nodes = root.nodes.map((node, index) => normalizeNode(node, index, categories, legacyCategories));
   const rawEdges = (root.edges ?? []) as unknown[];
   const edges = rawEdges.map(normalizeEdge);
   const nodeIds = new Set<string>();
@@ -333,12 +435,13 @@ export function normalizeGraph(input: unknown): GraphData {
   }
 
   return {
+    categories,
     nodes,
     edges,
     ...(optionalString(root.name, "graph.name")
       ? { name: optionalString(root.name, "graph.name") }
       : {}),
-    version: finiteNumberAt(root.version, "graph.version", 1),
+    version: 2,
   };
 }
 

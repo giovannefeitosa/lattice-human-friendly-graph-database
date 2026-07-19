@@ -17,6 +17,7 @@ import {
   type GraphData,
   type GraphEdge,
   type GraphNode,
+  type NodeCategory,
 } from "@/lib/graph";
 
 const NODE_RADIUS = 48;
@@ -32,6 +33,14 @@ type GraphSummary = {
   updatedAt: string;
 };
 type ExportPreview = { format: "JSON" | "Cypher"; contents: string };
+
+type CommittedTextInputProps = {
+  value: string;
+  onCommit: (value: string) => void;
+  ariaLabel?: string;
+  className?: string;
+  normalize?: (value: string) => string;
+};
 
 type DragState =
   | { kind: "pan"; start: Point; origin: Point }
@@ -60,6 +69,52 @@ function clamp(value: number, min: number, max: number) {
 
 function graphWithTimestamp(graph: GraphData): GraphData {
   return { ...graph, updatedAt: new Date().toISOString() } as GraphData;
+}
+
+function CommittedTextInput({ value, onCommit, ariaLabel, className, normalize }: CommittedTextInputProps) {
+  const [draft, setDraft] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+
+  const commit = () => {
+    const next = (normalize ? normalize(draft) : draft.trim());
+    if (!next) {
+      setInvalid(true);
+      setDraft(value);
+      return;
+    }
+    setInvalid(false);
+    setDraft(next);
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <input
+      className={className}
+      aria-label={ariaLabel}
+      aria-invalid={invalid}
+      value={draft}
+      onChange={(event) => { setDraft(event.target.value); setInvalid(false); }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") { setDraft(value); setInvalid(false); event.currentTarget.blur(); }
+      }}
+    />
+  );
+}
+
+function categoryIdForName(name: string, categories: NodeCategory[]) {
+  const base = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "categoria";
+  const used = new Set(categories.map((category) => category.id));
+  let id = base;
+  let suffix = 2;
+  while (used.has(id)) id = `${base}-${suffix++}`;
+  return id;
 }
 
 function asProperties(value: unknown): Record<string, unknown> {
@@ -93,6 +148,10 @@ export default function GraphEditor() {
   const [connectSource, setConnectSource] = useState<string | null>(null);
   const [connectMode, setConnectMode] = useState(false);
   const [propertyError, setPropertyError] = useState("");
+  const [categoryCreatorOpen, setCategoryCreatorOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryColor, setNewCategoryColor] = useState(PALETTE[0]);
+  const [categoryError, setCategoryError] = useState("");
   const [status, setStatus] = useState("Salvo");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -207,6 +266,10 @@ export default function GraphEditor() {
   const createNode = useCallback(
     (position?: Point, partial: Partial<GraphNode> = {}) => {
       const id = partial.id || uid("node");
+      const category = partial.categoryId
+        ? graphRef.current.categories.find((item) => item.id === partial.categoryId)
+        : graphRef.current.categories[0];
+      if (!category) throw new Error("Crie uma categoria antes de adicionar um nó.");
       const nextPosition = position || {
         x: (svgRef.current?.clientWidth || 900) / 2 / viewport.zoom - viewport.x,
         y: (svgRef.current?.clientHeight || 600) / 2 / viewport.zoom - viewport.y,
@@ -214,12 +277,13 @@ export default function GraphEditor() {
       const node = {
         id,
         label: partial.label || "Novo conceito",
-        type: partial.type || "Concept",
+        categoryId: category.id,
+        type: category.name,
         content: partial.content || "",
         x: partial.x ?? nextPosition.x,
         y: partial.y ?? nextPosition.y,
         z: partial.z ?? 0,
-        color: partial.color || PALETTE[graphRef.current.nodes.length % PALETTE.length],
+        color: category.color,
         properties: asProperties(partial.properties),
       } as GraphNode;
       commitGraph((current) => ({ ...current, nodes: [...current.nodes, node] }));
@@ -511,13 +575,15 @@ export default function GraphEditor() {
     if (graphId) {
       setStatus("Salvando…");
       try {
-        await fetch("/api/graphs", {
+        const response = await fetch("/api/graphs", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: graphId, name: graph.name, graph }),
         });
+        if (!response.ok) throw new Error("Falha ao salvar o grafo.");
       } catch {
-        // The library reload will surface connectivity problems.
+        setStatus("Erro ao salvar");
+        return;
       }
     }
     setGraphId(null);
@@ -570,6 +636,53 @@ export default function GraphEditor() {
     }
   };
 
+  const selectNodeCategory = (categoryId: string) => {
+    const category = graph.categories.find((item) => item.id === categoryId);
+    if (!category) throw new Error("Categoria inexistente.");
+    updateSelectedNode({ categoryId });
+  };
+
+  const createAndSelectCategory = () => {
+    if (!selectedNode) return;
+    const name = newCategoryName.trim();
+    if (!name) {
+      setCategoryError("Informe o nome da categoria.");
+      return;
+    }
+    if (graph.categories.some((category) => category.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+      setCategoryError("Essa categoria já existe neste grafo.");
+      return;
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(newCategoryColor)) {
+      setCategoryError("Escolha uma cor válida.");
+      return;
+    }
+    const category: NodeCategory = {
+      id: categoryIdForName(name, graph.categories),
+      name,
+      color: newCategoryColor.toLowerCase(),
+    };
+    commitGraph((current) => ({
+      ...current,
+      categories: [...current.categories, category],
+      nodes: current.nodes.map((node) => node.id === selectedNode.id ? { ...node, categoryId: category.id } : node),
+    }));
+    setNewCategoryName("");
+    setNewCategoryColor(PALETTE[graph.categories.length % PALETTE.length]);
+    setCategoryError("");
+    setCategoryCreatorOpen(false);
+  };
+
+  const updateSelectedCategoryColor = (color: string) => {
+    if (!selectedNode || !/^#[0-9a-f]{6}$/i.test(color)) return;
+    commitGraph((current) => ({
+      ...current,
+      categories: current.categories.map((category) =>
+        category.id === selectedNode.categoryId ? { ...category, color: color.toLowerCase() } : category,
+      ),
+    }));
+  };
+
   if (screen === "library") {
     return (
       <main className="graph-library" aria-label="Biblioteca de grafos">
@@ -615,7 +728,7 @@ export default function GraphEditor() {
           <span className="brand-mark">L</span>
           <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
         </div>
-        <input className="graph-name-input" aria-label="Nome do grafo" value={graph.name || ""} onChange={(event) => commitGraph((current) => ({ ...current, name: event.target.value }))} />
+        <CommittedTextInput className="graph-name-input" ariaLabel="Nome do grafo" value={graph.name || ""} onCommit={(name) => commitGraph((current) => ({ ...current, name }))} />
         <nav className="toolbar" aria-label="Ferramentas do grafo">
           <button onClick={() => createNode()} title="Adicionar nó">＋ Nó</button>
           <button onClick={startConnecting} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
@@ -783,10 +896,23 @@ export default function GraphEditor() {
             {selectedNode && (
               <div className="form-stack" key={selectedNode.id}>
                 <div className="entity-preview"><i style={{ background: selectedNode.color }} /><div><strong>{selectedNode.label}</strong><small>{selectedNode.id}</small></div></div>
-                <label>Nome<input value={selectedNode.label} onChange={(event) => updateSelectedNode({ label: event.target.value })} /></label>
-                <label>Tipo / label<input value={selectedNode.type} onChange={(event) => updateSelectedNode({ type: event.target.value })} /></label>
+                <label>Nome<CommittedTextInput value={selectedNode.label} onCommit={(label) => updateSelectedNode({ label })} /></label>
+                <label>Categoria
+                  <select value={selectedNode.categoryId} onChange={(event) => selectNodeCategory(event.target.value)}>
+                    {graph.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                </label>
+                <button className="category-add" onClick={() => { setCategoryCreatorOpen((open) => !open); setCategoryError(""); }}>＋ Nova categoria</button>
+                {categoryCreatorOpen && (
+                  <div className="category-creator">
+                    <label>Nome da categoria<input autoFocus value={newCategoryName} onChange={(event) => { setNewCategoryName(event.target.value); setCategoryError(""); }} onKeyDown={(event) => { if (event.key === "Enter") createAndSelectCategory(); }} /></label>
+                    <label>Cor<input className="color" type="color" value={newCategoryColor} onChange={(event) => setNewCategoryColor(event.target.value)} /></label>
+                    {categoryError && <p className="error">{categoryError}</p>}
+                    <button className="wide primary" onClick={createAndSelectCategory}>Criar e selecionar</button>
+                  </div>
+                )}
                 <div className="row-fields">
-                  <label>Cor<input className="color" type="color" value={selectedNode.color} onChange={(event) => updateSelectedNode({ color: event.target.value })} /></label>
+                  <label>Cor da categoria<input className="color" type="color" value={selectedNode.color} onChange={(event) => updateSelectedCategoryColor(event.target.value)} /></label>
                   <label>Profundidade<input type="number" min="-10" max="10" value={selectedNode.z || 0} onChange={(event) => updateSelectedNode({ z: Number(event.target.value) })} /></label>
                 </div>
                 <label>Propriedades (JSON)<textarea ref={propertyRef} key={`node-properties-${selectedNode.id}`} spellCheck={false} defaultValue={JSON.stringify(asProperties(selectedNode.properties), null, 2)} onBlur={saveProperties} /></label>
@@ -798,7 +924,7 @@ export default function GraphEditor() {
             {selectedEdge && (
               <div className="form-stack" key={selectedEdge.id}>
                 <div className="entity-preview"><i className="edge-dot" /><div><strong>{selectedEdge.type}</strong><small>{selectedEdge.source} → {selectedEdge.target}</small></div></div>
-                <label>Tipo da relação<input value={selectedEdge.type} onChange={(event) => updateSelectedEdge({ type: event.target.value.toUpperCase().replace(/\s+/g, "_") })} /></label>
+                <label>Tipo da relação<CommittedTextInput value={selectedEdge.type} normalize={(value) => value.trim().toUpperCase().replace(/\s+/g, "_")} onCommit={(type) => updateSelectedEdge({ type })} /></label>
                 <label>Propriedades (JSON)<textarea ref={propertyRef} key={`edge-properties-${selectedEdge.id}`} spellCheck={false} defaultValue={JSON.stringify(asProperties(selectedEdge.properties), null, 2)} onBlur={saveProperties} /></label>
                 {propertyError && <p className="error">{propertyError}</p>}
                 <button className="wide primary" onClick={saveProperties}>Aplicar propriedades</button>
@@ -829,7 +955,7 @@ export default function GraphEditor() {
         .toolbar{display:flex;align-items:center;gap:7px;flex:1}.toolbar button{white-space:nowrap}.divider{width:1px;height:26px;background:#273047;margin:0 3px}.top-actions{display:flex;align-items:center;gap:8px}.icon-button{width:34px;height:34px;padding:0;border-radius:50%}.save-state{display:flex;align-items:center;gap:7px;color:#74809a;font-size:11px;white-space:nowrap}.save-state i{width:7px;height:7px;border-radius:50%;background:#42d6a4;box-shadow:0 0 9px #42d6a4}
         .workspace{display:flex;min-height:0;flex:1}.canvas-wrap{position:relative;min-width:0;flex:1;overflow:hidden}.graph-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;user-select:none}.graph-canvas:active{cursor:grabbing}.graph-canvas.connecting .node{cursor:crosshair}.node{cursor:grab}.node-label{fill:#f6f8ff;font-size:13px;font-weight:750;paint-order:stroke;stroke:#080b14;stroke-width:4px}.node-type{fill:#8b97b1;font-size:9px;font-weight:650;letter-spacing:.11em;text-transform:uppercase;paint-order:stroke;stroke:#080b14;stroke-width:3px}.node.selected .node-label{fill:#fff}.edge-line{fill:none;stroke:#4c5875;stroke-width:2;transition:.15s}.edge-hit{fill:none;stroke:transparent;stroke-width:18;cursor:pointer}.edge:hover .edge-line,.edge.selected .edge-line{stroke:#a88bff;stroke-width:3}.edge rect{fill:#111726;stroke:#2c3650}.edge.selected rect{stroke:#8a6ce8}.edge text{fill:#8793ac;font-size:8px;font-weight:700;letter-spacing:.08em}
         .canvas-footer{position:absolute;left:18px;right:18px;bottom:15px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;color:#69748c;font-size:11px}.zoom-control{pointer-events:auto;display:flex;align-items:center;border:1px solid #283149;border-radius:10px;background:#0e1322dd;box-shadow:0 8px 24px #0006;overflow:hidden}.zoom-control button{border:0;border-radius:0;padding:7px 11px;background:transparent}.zoom-control span{width:52px;text-align:center}.connect-hint{position:absolute;z-index:3;left:50%;top:18px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;border:1px solid #8065d4;border-radius:12px;background:#19142cdd;padding:9px 12px;color:#e5ddff;font-size:12px;box-shadow:0 12px 30px #0008}.connect-hint button{padding:5px 8px}.help-card{position:absolute;z-index:3;right:18px;top:18px;display:flex;flex-direction:column;gap:7px;width:220px;padding:15px;border:1px solid #28324a;border-radius:13px;background:#0f1423ee;box-shadow:0 16px 35px #0008;font-size:11px;color:#8995ad}.help-card strong{color:#fff;font-size:13px;margin-bottom:3px}
-        .inspector{width:294px;flex:0 0 294px;display:flex;flex-direction:column;gap:16px;padding:18px;border-left:1px solid #20283b;background:#0c111d;overflow-y:auto;box-shadow:-10px 0 30px #0003;z-index:4}.inspector-title{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #20283b}.inspector-title>div{display:flex;flex-direction:column;gap:5px}.inspector-title small{color:#7459ce;font-size:9px;font-weight:800;letter-spacing:.17em}.inspector-title strong{font-size:15px}.inspector-title button{border:0;background:transparent;padding:0;color:#69758e;font-size:22px}.empty-inspector{display:flex;flex-direction:column;align-items:center;text-align:center;margin:auto 0;color:#6f7b94}.empty-inspector span{display:grid;place-items:center;width:58px;height:58px;border:1px solid #29334c;border-radius:18px;background:#111726;font-size:24px;color:#7b61d2}.empty-inspector strong{margin-top:14px;color:#b8c1d5;font-size:13px}.empty-inspector p{max-width:210px;font-size:11px;line-height:1.6}.form-stack{display:flex;flex-direction:column;gap:14px}.entity-preview{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #242d43;border-radius:12px;background:#111624}.entity-preview i{width:30px;height:30px;border-radius:50%;box-shadow:inset 5px 5px 10px #fff3,0 5px 12px #0006}.entity-preview .edge-dot{border:2px solid #9173eb;background:transparent}.entity-preview div{display:flex;min-width:0;flex-direction:column;gap:3px}.entity-preview strong{overflow:hidden;text-overflow:ellipsis;font-size:12px}.entity-preview small{overflow:hidden;text-overflow:ellipsis;color:#65718b;font-size:9px}.form-stack label{display:flex;flex-direction:column;gap:7px;color:#78849d;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.form-stack input,.form-stack textarea{width:100%;box-sizing:border-box;border:1px solid #29324a;border-radius:9px;outline:none;background:#111726;color:#e6ebf6;padding:9px 10px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:none;transition:.15s}.form-stack input:focus,.form-stack textarea:focus{border-color:#765bd1;box-shadow:0 0 0 3px #7255d320}.form-stack textarea{min-height:110px;resize:vertical}.form-stack input.color{height:38px;padding:4px}.row-fields{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.wide{width:100%}.danger{margin-top:auto;border-color:#5a2c3c;color:#e989a6;background:#21131b}.error{margin:-7px 0 0;color:#ff718e;font-size:10px}
+        .inspector{width:294px;flex:0 0 294px;display:flex;flex-direction:column;gap:16px;padding:18px;border-left:1px solid #20283b;background:#0c111d;overflow-y:auto;box-shadow:-10px 0 30px #0003;z-index:4}.inspector-title{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #20283b}.inspector-title>div{display:flex;flex-direction:column;gap:5px}.inspector-title small{color:#7459ce;font-size:9px;font-weight:800;letter-spacing:.17em}.inspector-title strong{font-size:15px}.inspector-title button{border:0;background:transparent;padding:0;color:#69758e;font-size:22px}.empty-inspector{display:flex;flex-direction:column;align-items:center;text-align:center;margin:auto 0;color:#6f7b94}.empty-inspector span{display:grid;place-items:center;width:58px;height:58px;border:1px solid #29334c;border-radius:18px;background:#111726;font-size:24px;color:#7b61d2}.empty-inspector strong{margin-top:14px;color:#b8c1d5;font-size:13px}.empty-inspector p{max-width:210px;font-size:11px;line-height:1.6}.form-stack{display:flex;flex-direction:column;gap:14px}.entity-preview{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #242d43;border-radius:12px;background:#111624}.entity-preview i{width:30px;height:30px;border-radius:50%;box-shadow:inset 5px 5px 10px #fff3,0 5px 12px #0006}.entity-preview .edge-dot{border:2px solid #9173eb;background:transparent}.entity-preview div{display:flex;min-width:0;flex-direction:column;gap:3px}.entity-preview strong{overflow:hidden;text-overflow:ellipsis;font-size:12px}.entity-preview small{overflow:hidden;text-overflow:ellipsis;color:#65718b;font-size:9px}.form-stack label{display:flex;flex-direction:column;gap:7px;color:#78849d;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.form-stack input,.form-stack textarea,.form-stack select{width:100%;box-sizing:border-box;border:1px solid #29324a;border-radius:9px;outline:none;background:#111726;color:#e6ebf6;padding:9px 10px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:none;transition:.15s}.form-stack input:focus,.form-stack textarea:focus,.form-stack select:focus{border-color:#765bd1;box-shadow:0 0 0 3px #7255d320}.form-stack input[aria-invalid="true"]{border-color:#ff718e}.form-stack textarea{min-height:110px;resize:vertical}.form-stack input.color{height:38px;padding:4px}.row-fields{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.category-add{width:100%;border-style:dashed}.category-creator{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid #2d3650;border-radius:11px;background:#0f1422}.wide{width:100%}.danger{margin-top:auto;border-color:#5a2c3c;color:#e989a6;background:#21131b}.error{margin:-7px 0 0;color:#ff718e;font-size:10px}
         @media(max-width:1050px){.brand{min-width:auto}.brand>span:last-child{display:none}.toolbar button{padding:8px}.save-state{display:none}}
         @media(max-width:760px){.topbar{gap:8px;padding:0 10px}.toolbar{overflow-x:auto}.toolbar .divider,.toolbar button:nth-of-type(3),.toolbar button:nth-of-type(4){display:none}.inspector{position:absolute;right:0;top:68px;bottom:0;width:min(294px,85vw)}.top-actions .icon-button:first-of-type{display:none}}
       `}</style>
