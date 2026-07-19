@@ -13,7 +13,6 @@ type Props = {
   onCommit: (next: GraphUpdate) => void;
   onDelete: () => void;
   onClose: () => void;
-  onExplore?: (nodeId: string) => void;
 };
 
 type CommittedTextInputProps = {
@@ -26,7 +25,10 @@ function CommittedTextInput({ value, onCommit, normalize }: CommittedTextInputPr
   const [draft, setDraft] = useState(value);
   const [invalid, setInvalid] = useState(false);
 
-  useEffect(() => setDraft(value), [value]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDraft(value), 0);
+    return () => window.clearTimeout(timer);
+  }, [value]);
 
   const commit = () => {
     const next = normalize ? normalize(draft) : draft.trim();
@@ -61,7 +63,7 @@ function categoryIdForName(name: string, categories: NodeCategory[]) {
   return id;
 }
 
-export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onExplore }: Props) {
+export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose }: Props) {
   const [propertyError, setPropertyError] = useState("");
   const [categoryCreatorOpen, setCategoryCreatorOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -70,9 +72,12 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
   const propertyRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setPropertyError("");
-    setCategoryCreatorOpen(false);
-    setCategoryError("");
+    const timer = window.setTimeout(() => {
+      setPropertyError("");
+      setCategoryCreatorOpen(false);
+      setCategoryError("");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [selectedEdge?.id, selectedNode?.id]);
 
   const updateSelectedNode = (patch: Partial<GraphNode>) => {
@@ -147,7 +152,6 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
     {!selectedNode && !selectedEdge && <div className="empty-inspector"><span>◇</span><strong>Selecione um elemento</strong><p>Clique em um nó ou conexão para editar seus dados.</p></div>}
     {selectedNode && <div className="form-stack" key={selectedNode.id}>
       <div className="entity-preview"><i style={{ background: selectedNode.color }} /><div><strong>{selectedNode.label}</strong><small>{selectedNode.id}</small></div></div>
-      {onExplore && <button className="wide explore-button" onClick={() => onExplore(selectedNode.id)}>◎ Explorar a partir deste nó</button>}
       <label>Nome<CommittedTextInput value={selectedNode.label} onCommit={(label) => updateSelectedNode({ label })} /></label>
       <label>Categoria<select value={selectedNode.categoryId} onChange={(event) => selectNodeCategory(event.target.value)}>{graph.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <button className="category-add" onClick={() => { setCategoryCreatorOpen((open) => !open); setCategoryError(""); }}>＋ Nova categoria</button>

@@ -2455,12 +2455,6 @@ pre.export-code {
   background: rgba(4, 7, 17, 0.38);
 }
 
-.graph-shell .explore-button {
-  border-color: rgba(139, 108, 232, 0.42);
-  color: #d9ceff;
-  background: linear-gradient(145deg, rgba(54, 38, 94, 0.75), rgba(25, 23, 45, 0.8));
-}
-
 /* Saved graph library */
 .graph-library {
   width: 100vw;
@@ -2632,7 +2626,9 @@ pre.export-code {
 .graph-shell .node-visibility-toggle:hover circle,
 .graph-shell .node-visibility-toggle:focus circle { stroke: #fff; filter: drop-shadow(0 0 7px #9b7af2); }
 .graph-shell .visibility-hint { position: absolute; z-index: 8; top: 14px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); padding: 7px 10px; border: 1px solid #303a52; border-radius: 10px; background: #101625e8; color: #8f9ab0; font-size: 10px; box-shadow: 0 8px 24px #0005; }
-.graph-shell .visibility-hint button { padding: 4px 7px; border: 0; border-radius: 6px; background: #6547c4; color: #fff; font-size: 9px; font-weight: 700; }
+.graph-shell .node { -webkit-touch-callout: none; }
+.graph-shell .node-context-menu { z-index: 12; }
+.graph-shell .node-context-menu button { justify-content: flex-start; color: #ded6ff; }
 
 .graph-shell dialog.export-dialog {
   margin: auto;

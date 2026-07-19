@@ -18,7 +18,11 @@ import {
   type GraphEdge,
   type GraphNode,
 } from "@/lib/graph";
-import GraphExplorer from "./GraphExplorer";
+import {
+  connectedNodeIds,
+  getProgressiveVisibleNodeIds,
+  layoutGraph,
+} from "@/lib/graph-layout";
 import GraphInspector from "./GraphInspector";
 
 const NODE_RADIUS = 48;
@@ -40,6 +44,19 @@ type GraphSummary = {
   updatedAt: string;
 };
 type ExportPreview = { format: "JSON" | "Cypher"; contents: string };
+type NodeContextMenuState = {
+  nodeId: string;
+  x: number;
+  y: number;
+  returnFocus: SVGGElement | null;
+};
+type LongPressState = {
+  pointerId: number;
+  nodeId: string;
+  start: Point;
+  timer: number;
+  fired: boolean;
+};
 
 type CommittedTextInputProps = {
   value: string;
@@ -135,31 +152,6 @@ function curvePath(source: GraphNode, target: GraphNode) {
   return `M ${source.x} ${source.y} Q ${mx} ${my} ${target.x} ${target.y}`;
 }
 
-function connectedNodeIds(graph: GraphData, nodeId: string) {
-  const ids = new Set<string>();
-  graph.edges.forEach((edge) => {
-    if (edge.source === nodeId) ids.add(edge.target);
-    if (edge.target === nodeId) ids.add(edge.source);
-  });
-  return [...ids];
-}
-
-function progressivelyVisibleNodeIds(graph: GraphData, rootId: string | null, expanded: Set<string>) {
-  if (!rootId) return new Set(graph.nodes.map((node) => node.id));
-  const visible = new Set([rootId]);
-  const queue = [rootId];
-  while (queue.length) {
-    const nodeId = queue.shift()!;
-    if (!expanded.has(nodeId)) continue;
-    connectedNodeIds(graph, nodeId).forEach((connectedId) => {
-      if (visible.has(connectedId)) return;
-      visible.add(connectedId);
-      queue.push(connectedId);
-    });
-  }
-  return visible;
-}
-
 export default function GraphEditor() {
   const [graph, setGraph] = useState<GraphData>(() => normalizeGraph(defaultGraph));
   const graphRef = useRef(graph);
@@ -178,10 +170,13 @@ export default function GraphEditor() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
-  const [exploreRootId, setExploreRootId] = useState<string | null>(null);
   const [progressiveRootId, setProgressiveRootId] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextMenuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -191,6 +186,39 @@ export default function GraphEditor() {
   const viewportRef = useRef(viewport);
   const touchPointsRef = useRef(new Map<number, Point>());
   const pinchRef = useRef<PinchState | null>(null);
+  const longPressRef = useRef<LongPressState | null>(null);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
+  }, []);
+
+  const closeNodeContextMenu = useCallback((restoreFocus = false) => {
+    setNodeContextMenu((current) => {
+      if (restoreFocus && current?.returnFocus) {
+        window.setTimeout(() => current.returnFocus?.focus(), 0);
+      }
+      return null;
+    });
+  }, []);
+
+  const openNodeContextMenu = useCallback((
+    nodeId: string,
+    clientX: number,
+    clientY: number,
+    returnFocus: SVGGElement | null,
+  ) => {
+    const rect = canvasWrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuWidth = 208;
+    const menuHeight = 49;
+    setNodeContextMenu({
+      nodeId,
+      x: clamp(clientX - rect.left, 8, Math.max(8, rect.width - menuWidth - 8)),
+      y: clamp(clientY - rect.top, 8, Math.max(8, rect.height - menuHeight - 8)),
+      returnFocus,
+    });
+  }, []);
 
   useEffect(() => {
     graphRef.current = graph;
@@ -201,8 +229,37 @@ export default function GraphEditor() {
   }, [viewport]);
 
   useEffect(() => {
-    if (window.matchMedia("(max-width: 800px)").matches) setInspectorOpen(false);
+    const timer = window.setTimeout(() => {
+      if (window.matchMedia("(max-width: 800px)").matches) setInspectorOpen(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!nodeContextMenu) return;
+    contextMenuButtonRef.current?.focus();
+    const dismissOutside = (event: PointerEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) closeNodeContextMenu();
+    };
+    const dismissForViewportChange = () => closeNodeContextMenu();
+    const handleMenuKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeNodeContextMenu(true);
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    window.addEventListener("keydown", handleMenuKey);
+    window.addEventListener("resize", dismissForViewportChange);
+    window.addEventListener("scroll", dismissForViewportChange, true);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      window.removeEventListener("keydown", handleMenuKey);
+      window.removeEventListener("resize", dismissForViewportChange);
+      window.removeEventListener("scroll", dismissForViewportChange, true);
+    };
+  }, [closeNodeContextMenu, nodeContextMenu]);
+
+  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
 
   const commitGraph = useCallback((next: GraphData | ((current: GraphData) => GraphData)) => {
     setGraph((current) => {
@@ -305,7 +362,7 @@ export default function GraphEditor() {
   }, [exportPreview]);
 
   useEffect(() => {
-    if (screen !== "editor" || exploreRootId) return;
+    if (screen !== "editor") return;
     const canvas = svgRef.current;
     if (!canvas) return;
     const preventWebViewPull = (event: TouchEvent) => {
@@ -313,7 +370,7 @@ export default function GraphEditor() {
     };
     canvas.addEventListener("touchmove", preventWebViewPull, { passive: false });
     return () => canvas.removeEventListener("touchmove", preventWebViewPull);
-  }, [exploreRootId, screen]);
+  }, [screen]);
 
   const createNode = useCallback(
     (position?: Point, partial: Partial<GraphNode> = {}) => {
@@ -449,7 +506,7 @@ export default function GraphEditor() {
     [viewport],
   );
   const visibleNodeIds = useMemo(
-    () => progressivelyVisibleNodeIds(graph, progressiveRootId, expandedNodes),
+    () => getProgressiveVisibleNodeIds(graph, progressiveRootId, expandedNodes),
     [expandedNodes, graph, progressiveRootId],
   );
   const visibleNodes = useMemo(
@@ -463,17 +520,51 @@ export default function GraphEditor() {
   const hiddenNodeCount = graph.nodes.length - visibleNodes.length;
 
   useEffect(() => {
-    if (progressiveRootId && !nodeMap.has(progressiveRootId)) {
-      setProgressiveRootId(null);
-      setExpandedNodes(new Set());
-      return;
-    }
-    setSelectedNodes((current) => new Set([...current].filter((id) => visibleNodeIds.has(id))));
-    setSelectedEdges((current) => new Set([...current].filter((id) => visibleEdges.some((edge) => edge.id === id))));
+    const timer = window.setTimeout(() => {
+      if (progressiveRootId && !nodeMap.has(progressiveRootId)) {
+        setProgressiveRootId(null);
+        setExpandedNodes(new Set());
+        return;
+      }
+      setSelectedNodes((current) => new Set([...current].filter((id) => visibleNodeIds.has(id))));
+      setSelectedEdges((current) => new Set([...current].filter((id) => visibleEdges.some((edge) => edge.id === id))));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [nodeMap, progressiveRootId, visibleEdges, visibleNodeIds]);
+
+  const beginNodeLongPress = (event: ReactPointerEvent<SVGGElement>, nodeId: string) => {
+    if (event.pointerType !== "touch") return;
+    cancelLongPress();
+    const press: LongPressState = {
+      pointerId: event.pointerId,
+      nodeId,
+      start: { x: event.clientX, y: event.clientY },
+      timer: 0,
+      fired: false,
+    };
+    const returnFocus = event.currentTarget;
+    press.timer = window.setTimeout(() => {
+      if (longPressRef.current !== press) return;
+      press.fired = true;
+      const drag = dragRef.current;
+      if (drag?.kind === "nodes") {
+        setGraph((current) => ({
+          ...current,
+          nodes: current.nodes.map((node) => {
+            const origin = drag.positions[node.id];
+            return origin ? { ...node, x: origin.x, y: origin.y } : node;
+          }),
+        }));
+      }
+      dragRef.current = null;
+      openNodeContextMenu(nodeId, press.start.x, press.start.y, returnFocus);
+    }, 500);
+    longPressRef.current = press;
+  };
 
   const beginTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.pointerType !== "touch") return;
+    if (touchPointsRef.current.size > 0 && !touchPointsRef.current.has(event.pointerId)) cancelLongPress();
     touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     if (touchPointsRef.current.size < 2) return;
@@ -500,6 +591,10 @@ export default function GraphEditor() {
   const moveTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.pointerType !== "touch" || !touchPointsRef.current.has(event.pointerId)) return;
     touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const longPress = longPressRef.current;
+    if (longPress?.pointerId === event.pointerId && !longPress.fired && pointDistance(longPress.start, { x: event.clientX, y: event.clientY }) > 10) {
+      cancelLongPress();
+    }
     const pinch = pinchRef.current;
     if (!pinch) return;
     const first = touchPointsRef.current.get(pinch.ids[0]);
@@ -525,9 +620,19 @@ export default function GraphEditor() {
 
   const endTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.pointerType !== "touch") return;
+    const longPress = longPressRef.current;
+    const finishedLongPress = longPress?.pointerId === event.pointerId && longPress.fired;
+    if (longPress?.pointerId === event.pointerId) cancelLongPress();
     const wasPinching = Boolean(pinchRef.current);
     touchPointsRef.current.delete(event.pointerId);
     if (touchPointsRef.current.size < 2) pinchRef.current = null;
+    if (finishedLongPress) {
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!wasPinching) return;
     dragRef.current = null;
     event.preventDefault();
@@ -538,6 +643,7 @@ export default function GraphEditor() {
     if (pinchRef.current) return;
     if (event.button !== 0 && event.button !== 1) return;
     if (event.target !== event.currentTarget && (event.target as SVGElement).dataset.canvas !== "true") return;
+    closeNodeContextMenu();
     if (panAnimationRef.current !== null) window.cancelAnimationFrame(panAnimationRef.current);
     panAnimationRef.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -613,6 +719,7 @@ export default function GraphEditor() {
 
   const zoomCanvas = (event: ReactWheelEvent<SVGSVGElement>) => {
     event.preventDefault();
+    closeNodeContextMenu();
     const rect = event.currentTarget.getBoundingClientRect();
     const mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     setViewport((current) => {
@@ -754,35 +861,23 @@ export default function GraphEditor() {
   };
 
   const toggleNodeExpansion = (nodeId: string) => {
-    if (!progressiveRootId) {
-      setProgressiveRootId(nodeId);
-      setExpandedNodes(new Set());
-      setSelectedNodes(new Set([nodeId]));
-      setSelectedEdges(new Set());
-      setStatus("Nós conectados ocultos");
-      return;
-    }
+    if (!progressiveRootId) return;
+    const wasExpanded = expandedNodes.has(nodeId);
     setExpandedNodes((current) => {
       const next = new Set(current);
       if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
       return next;
     });
-    setStatus(expandedNodes.has(nodeId) ? "Ramo oculto" : "Conexões expandidas");
+    setStatus(wasExpanded ? "Ramo oculto" : "Conexões expandidas");
   };
 
-  const showAllNodes = () => {
-    setProgressiveRootId(null);
-    setExpandedNodes(new Set());
-    setStatus("Todos os nós visíveis");
-  };
-
-  const fitGraph = () => {
-    if (!visibleNodes.length || !svgRef.current) {
+  const fitNodes = (nodes: GraphNode[]) => {
+    if (!nodes.length || !svgRef.current) {
       setViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
-    const xs = visibleNodes.map((node) => node.x);
-    const ys = visibleNodes.map((node) => node.y);
+    const xs = nodes.map((node) => node.x);
+    const ys = nodes.map((node) => node.y);
     const minX = Math.min(...xs) - 100;
     const maxX = Math.max(...xs) + 100;
     const minY = Math.min(...ys) - 100;
@@ -797,6 +892,44 @@ export default function GraphEditor() {
       x: svgRef.current.clientWidth / zoom / 2 - (minX + maxX) / 2,
       y: svgRef.current.clientHeight / zoom / 2 - (minY + maxY) / 2,
     });
+  };
+
+  const fitGraph = () => fitNodes(visibleNodes);
+
+  const startProgressiveExploration = (nodeId: string) => {
+    const node = graphRef.current.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    cancelLongPress();
+    closeNodeContextMenu();
+    setProgressiveRootId(nodeId);
+    setExpandedNodes(new Set());
+    setSelectedNodes(new Set([nodeId]));
+    setSelectedEdges(new Set());
+    setConnectMode(false);
+    setConnectSource(null);
+    setHelpOpen(false);
+    setStatus("Explorando a partir deste nó");
+    const canvas = svgRef.current;
+    if (canvas) {
+      setViewport((current) => ({
+        ...current,
+        x: canvas.clientWidth / current.zoom / 2 - node.x,
+        y: canvas.clientHeight / current.zoom / 2 - node.y,
+      }));
+    }
+  };
+
+  const showAllNodesAndLayout = () => {
+    cancelLongPress();
+    closeNodeContextMenu();
+    const next = layoutGraph(graphRef.current);
+    setProgressiveRootId(null);
+    setExpandedNodes(new Set());
+    setConnectMode(false);
+    setConnectSource(null);
+    commitGraph(next);
+    setStatus("Todos os nós reorganizados");
+    window.requestAnimationFrame(() => fitNodes(next.nodes));
   };
 
   const exportJson = () => setExportPreview({ format: "JSON", contents: JSON.stringify(graph, null, 2) });
@@ -885,10 +1018,6 @@ export default function GraphEditor() {
     );
   }
 
-  if (exploreRootId) {
-    return <GraphExplorer graph={graph} rootId={exploreRootId} onExit={() => setExploreRootId(null)} onCommit={commitGraph} />;
-  }
-
   return (
     <main className="graph-shell" aria-label="Editor visual de grafo">
       <header className="topbar">
@@ -904,6 +1033,7 @@ export default function GraphEditor() {
           <button onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} title="Excluir seleção">⌫ Excluir</button>
           <span className="divider" />
           <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
+          <button onClick={showAllNodesAndLayout} title="Revelar, reorganizar e enquadrar todos os nós">◎ Visualizar tudo</button>
           <button onClick={() => fileRef.current?.click()} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
           <button onClick={exportJson} title="Exportar JSON">↓ JSON</button>
           <button className="primary" onClick={exportCypher} title="Exportar consultas Cypher">↓ Cypher</button>
@@ -917,7 +1047,7 @@ export default function GraphEditor() {
       </header>
 
       <section className="workspace">
-        <div className="canvas-wrap">
+        <div className="canvas-wrap" ref={canvasWrapRef}>
           {mobileHintOpen && (
             <div className="mobile-gesture-tip" role="status">
               <span>Use as setas ou dois dedos para mover e dar zoom.</span>
@@ -927,9 +1057,7 @@ export default function GraphEditor() {
           {connectMode && (
             <div className="connect-hint">{connectSource ? "Escolha o nó de destino" : "Escolha o nó de origem"} <button onClick={() => { setConnectMode(false); setConnectSource(null); }}>Cancelar</button></div>
           )}
-          {hiddenNodeCount > 0 && (
-            <div className="visibility-hint">{hiddenNodeCount} {hiddenNodeCount === 1 ? "nó oculto" : "nós ocultos"} <button onClick={showAllNodes}>Mostrar todos</button></div>
-          )}
+          {hiddenNodeCount > 0 && <div className="visibility-hint" role="status">{hiddenNodeCount} {hiddenNodeCount === 1 ? "nó oculto" : "nós ocultos"}</div>}
           {helpOpen && (
             <div className="help-card">
               <strong>Atalhos</strong>
@@ -948,6 +1076,7 @@ export default function GraphEditor() {
             onPointerMoveCapture={moveTouchGesture}
             onPointerUpCapture={endTouchGesture}
             onPointerCancelCapture={endTouchGesture}
+            onLostPointerCapture={cancelLongPress}
             onPointerDown={beginPan}
             onPointerMove={movePointer}
             onPointerUp={endPointer}
@@ -1033,7 +1162,7 @@ export default function GraphEditor() {
                   const selected = selectedNodes.has(node.id);
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
-                  const connectionCount = connectedNodeIds(graph, node.id).length;
+                  const connectionCount = connectedNodeIds(graph, node.id).size;
                   const expanded = progressiveRootId ? expandedNodes.has(node.id) : true;
                   return (
                     <g
@@ -1041,9 +1170,24 @@ export default function GraphEditor() {
                       className={`node${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
-                      onPointerDown={(event) => beginNodeDrag(event, node)}
+                      onPointerDown={(event) => { beginNodeDrag(event, node); beginNodeLongPress(event, node.id); }}
                       onPointerUp={(event) => handleNodeClick(event, node)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dragRef.current = null;
+                        openNodeContextMenu(node.id, event.clientX, event.clientY, event.currentTarget);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        openNodeContextMenu(node.id, rect.left + rect.width / 2, rect.top + rect.height / 2, event.currentTarget);
+                      }}
                       role="button"
+                      tabIndex={0}
+                      aria-haspopup="menu"
                       aria-label={`${node.label}, tipo ${node.type}`}
                     >
                       <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
@@ -1053,7 +1197,7 @@ export default function GraphEditor() {
                       <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
                       <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                       <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
-                      {connectionCount > 0 && <g
+                      {progressiveRootId && connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
                         transform="translate(38 -38)"
                         role="button"
@@ -1078,6 +1222,22 @@ export default function GraphEditor() {
               </g>
             </g>
           </svg>
+          {nodeContextMenu && (
+            <div
+              ref={contextMenuRef}
+              className="context-menu node-context-menu"
+              role="menu"
+              aria-label="Ações do nó"
+              style={{ left: nodeContextMenu.x, top: nodeContextMenu.y }}
+            >
+              <button
+                ref={contextMenuButtonRef}
+                type="button"
+                role="menuitem"
+                onClick={() => startProgressiveExploration(nodeContextMenu.nodeId)}
+              >◎ Explorar</button>
+            </div>
+          )}
           <div className="canvas-footer">
             <span>{visibleNodes.length}/{graph.nodes.length} nós · {visibleEdges.length}/{graph.edges.length} relações</span>
             <div className="mobile-pan-control" aria-label="Mover canvas">
@@ -1132,7 +1292,6 @@ export default function GraphEditor() {
           onCommit={commitGraph}
           onDelete={deleteSelection}
           onClose={() => setInspectorOpen(false)}
-          onExplore={(nodeId) => setExploreRootId(nodeId)}
         />}
       </section>
 
@@ -1156,7 +1315,7 @@ export default function GraphEditor() {
         .toolbar{display:flex;align-items:center;gap:7px;flex:1}.toolbar button{white-space:nowrap}.divider{width:1px;height:26px;background:#273047;margin:0 3px}.top-actions{display:flex;align-items:center;gap:8px}.icon-button{width:34px;height:34px;padding:0;border-radius:50%}.save-state{display:flex;align-items:center;gap:7px;color:#74809a;font-size:11px;white-space:nowrap}.save-state i{width:7px;height:7px;border-radius:50%;background:#42d6a4;box-shadow:0 0 9px #42d6a4}
         .workspace{display:flex;min-height:0;flex:1}.canvas-wrap{position:relative;min-width:0;flex:1;overflow:hidden}.graph-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;user-select:none}.graph-canvas:active{cursor:grabbing}.graph-canvas.connecting .node{cursor:crosshair}.node{cursor:grab}.node-label{fill:#f6f8ff;font-size:13px;font-weight:750;paint-order:stroke;stroke:#080b14;stroke-width:4px}.node-type{fill:#8b97b1;font-size:9px;font-weight:650;letter-spacing:.11em;text-transform:uppercase;paint-order:stroke;stroke:#080b14;stroke-width:3px}.node.selected .node-label{fill:#fff}.edge-line{fill:none;stroke:#4c5875;stroke-width:2;transition:.15s}.edge-hit{fill:none;stroke:transparent;stroke-width:18;cursor:pointer}.edge:hover .edge-line,.edge.selected .edge-line{stroke:#a88bff;stroke-width:3}.edge rect{fill:#111726;stroke:#2c3650}.edge.selected rect{stroke:#8a6ce8}.edge text{fill:#8793ac;font-size:8px;font-weight:700;letter-spacing:.08em}
         .canvas-footer{position:absolute;left:18px;right:18px;bottom:15px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;color:#69748c;font-size:11px}.zoom-control{pointer-events:auto;display:flex;align-items:center;border:1px solid #283149;border-radius:10px;background:#0e1322dd;box-shadow:0 8px 24px #0006;overflow:hidden}.zoom-control button{border:0;border-radius:0;padding:7px 11px;background:transparent}.zoom-control span{width:52px;text-align:center}.connect-hint{position:absolute;z-index:3;left:50%;top:18px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;border:1px solid #8065d4;border-radius:12px;background:#19142cdd;padding:9px 12px;color:#e5ddff;font-size:12px;box-shadow:0 12px 30px #0008}.connect-hint button{padding:5px 8px}.help-card{position:absolute;z-index:3;right:18px;top:18px;display:flex;flex-direction:column;gap:7px;width:220px;padding:15px;border:1px solid #28324a;border-radius:13px;background:#0f1423ee;box-shadow:0 16px 35px #0008;font-size:11px;color:#8995ad}.help-card strong{color:#fff;font-size:13px;margin-bottom:3px}
-        .inspector{width:294px;flex:0 0 294px;display:flex;flex-direction:column;gap:16px;padding:18px;border-left:1px solid #20283b;background:#0c111d;overflow-y:auto;box-shadow:-10px 0 30px #0003;z-index:4}.inspector-title{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #20283b}.inspector-title>div{display:flex;flex-direction:column;gap:5px}.inspector-title small{color:#7459ce;font-size:9px;font-weight:800;letter-spacing:.17em}.inspector-title strong{font-size:15px}.inspector-title button{border:0;background:transparent;padding:0;color:#69758e;font-size:22px}.empty-inspector{display:flex;flex-direction:column;align-items:center;text-align:center;margin:auto 0;color:#6f7b94}.empty-inspector span{display:grid;place-items:center;width:58px;height:58px;border:1px solid #29334c;border-radius:18px;background:#111726;font-size:24px;color:#7b61d2}.empty-inspector strong{margin-top:14px;color:#b8c1d5;font-size:13px}.empty-inspector p{max-width:210px;font-size:11px;line-height:1.6}.form-stack{display:flex;flex-direction:column;gap:14px}.entity-preview{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #242d43;border-radius:12px;background:#111624}.entity-preview i{width:30px;height:30px;border-radius:50%;box-shadow:inset 5px 5px 10px #fff3,0 5px 12px #0006}.entity-preview .edge-dot{border:2px solid #9173eb;background:transparent}.entity-preview div{display:flex;min-width:0;flex-direction:column;gap:3px}.entity-preview strong{overflow:hidden;text-overflow:ellipsis;font-size:12px}.entity-preview small{overflow:hidden;text-overflow:ellipsis;color:#65718b;font-size:9px}.form-stack label{display:flex;flex-direction:column;gap:7px;color:#78849d;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.form-stack input,.form-stack textarea,.form-stack select{width:100%;box-sizing:border-box;border:1px solid #29324a;border-radius:9px;outline:none;background:#111726;color:#e6ebf6;padding:9px 10px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:none;transition:.15s}.form-stack input:focus,.form-stack textarea:focus,.form-stack select:focus{border-color:#765bd1;box-shadow:0 0 0 3px #7255d320}.form-stack input[aria-invalid="true"]{border-color:#ff718e}.form-stack textarea{min-height:110px;resize:vertical}.form-stack input.color{height:38px;padding:4px}.row-fields{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.category-add{width:100%;border-style:dashed}.category-creator{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid #2d3650;border-radius:11px;background:#0f1422}.wide{width:100%}.explore-button{border-color:#765bd5;background:linear-gradient(145deg,#241b43,#19172d);color:#d9ceff;box-shadow:inset 0 0 22px #7556d51c}.danger{margin-top:auto;border-color:#5a2c3c;color:#e989a6;background:#21131b}.error{margin:-7px 0 0;color:#ff718e;font-size:10px}
+        .inspector{width:294px;flex:0 0 294px;display:flex;flex-direction:column;gap:16px;padding:18px;border-left:1px solid #20283b;background:#0c111d;overflow-y:auto;box-shadow:-10px 0 30px #0003;z-index:4}.inspector-title{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #20283b}.inspector-title>div{display:flex;flex-direction:column;gap:5px}.inspector-title small{color:#7459ce;font-size:9px;font-weight:800;letter-spacing:.17em}.inspector-title strong{font-size:15px}.inspector-title button{border:0;background:transparent;padding:0;color:#69758e;font-size:22px}.empty-inspector{display:flex;flex-direction:column;align-items:center;text-align:center;margin:auto 0;color:#6f7b94}.empty-inspector span{display:grid;place-items:center;width:58px;height:58px;border:1px solid #29334c;border-radius:18px;background:#111726;font-size:24px;color:#7b61d2}.empty-inspector strong{margin-top:14px;color:#b8c1d5;font-size:13px}.empty-inspector p{max-width:210px;font-size:11px;line-height:1.6}.form-stack{display:flex;flex-direction:column;gap:14px}.entity-preview{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #242d43;border-radius:12px;background:#111624}.entity-preview i{width:30px;height:30px;border-radius:50%;box-shadow:inset 5px 5px 10px #fff3,0 5px 12px #0006}.entity-preview .edge-dot{border:2px solid #9173eb;background:transparent}.entity-preview div{display:flex;min-width:0;flex-direction:column;gap:3px}.entity-preview strong{overflow:hidden;text-overflow:ellipsis;font-size:12px}.entity-preview small{overflow:hidden;text-overflow:ellipsis;color:#65718b;font-size:9px}.form-stack label{display:flex;flex-direction:column;gap:7px;color:#78849d;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.form-stack input,.form-stack textarea,.form-stack select{width:100%;box-sizing:border-box;border:1px solid #29324a;border-radius:9px;outline:none;background:#111726;color:#e6ebf6;padding:9px 10px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:none;transition:.15s}.form-stack input:focus,.form-stack textarea:focus,.form-stack select:focus{border-color:#765bd1;box-shadow:0 0 0 3px #7255d320}.form-stack input[aria-invalid="true"]{border-color:#ff718e}.form-stack textarea{min-height:110px;resize:vertical}.form-stack input.color{height:38px;padding:4px}.row-fields{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.category-add{width:100%;border-style:dashed}.category-creator{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid #2d3650;border-radius:11px;background:#0f1422}.wide{width:100%}.danger{margin-top:auto;border-color:#5a2c3c;color:#e989a6;background:#21131b}.error{margin:-7px 0 0;color:#ff718e;font-size:10px}
         @media(max-width:1050px){.brand{min-width:auto}.brand>span:last-child{display:none}.toolbar button{padding:8px}.save-state{display:none}}
         @media(max-width:760px){.topbar{gap:8px;padding:0 10px}.toolbar{overflow-x:auto}.toolbar .divider,.toolbar button:nth-of-type(3),.toolbar button:nth-of-type(4){display:none}.inspector{position:absolute;right:0;top:68px;bottom:0;width:min(294px,85vw)}.top-actions .icon-button:first-of-type{display:none}}
       `}</style>

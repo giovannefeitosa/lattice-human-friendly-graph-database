@@ -38,10 +38,9 @@ test("includes the requested editor capabilities", async () => {
   assert.match(schema, /sqliteTable\(\s*"graphs"/);
 });
 
-test("includes focused editing and stable exploration behaviors", async () => {
-  const [editor, explorer, inspector, styles] = await Promise.all([
+test("includes focused editing and integrated exploration behaviors", async () => {
+  const [editor, inspector, styles] = await Promise.all([
     readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/components/GraphExplorer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/GraphInspector.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
   ]);
@@ -50,14 +49,11 @@ test("includes focused editing and stable exploration behaviors", async () => {
   assert.match(editor, /beginTouchGesture/);
   assert.match(editor, /pointDistance/);
   assert.match(editor, /<GraphInspector/);
-  assert.match(explorer, /<GraphInspector/);
-  assert.match(explorer, /openPosition/);
-  assert.match(explorer, /positionsRef/);
-  assert.match(explorer, /kind: "node"/);
-  assert.match(explorer, /explore-mode-switch/);
-  assert.match(explorer, /aria-label="Voltar ao gráfico"[^>]*>←<\/button>/);
-  assert.match(explorer, /onPointerDownCapture=\{beginTouchGesture\}/);
+  assert.match(editor, /Visualizar tudo/);
+  assert.match(editor, /Explorar/);
+  assert.match(editor, /onContextMenu/);
   assert.match(inspector, /Inspector de propriedades/);
+  assert.doesNotMatch(inspector, /onExplore|explore-button/);
   assert.match(styles, /body[\s\S]*user-select: none/);
   assert.match(styles, /:where\(input, textarea, select/);
 });
