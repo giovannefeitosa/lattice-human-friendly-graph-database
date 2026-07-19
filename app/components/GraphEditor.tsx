@@ -135,6 +135,31 @@ function curvePath(source: GraphNode, target: GraphNode) {
   return `M ${source.x} ${source.y} Q ${mx} ${my} ${target.x} ${target.y}`;
 }
 
+function connectedNodeIds(graph: GraphData, nodeId: string) {
+  const ids = new Set<string>();
+  graph.edges.forEach((edge) => {
+    if (edge.source === nodeId) ids.add(edge.target);
+    if (edge.target === nodeId) ids.add(edge.source);
+  });
+  return [...ids];
+}
+
+function progressivelyVisibleNodeIds(graph: GraphData, rootId: string | null, expanded: Set<string>) {
+  if (!rootId) return new Set(graph.nodes.map((node) => node.id));
+  const visible = new Set([rootId]);
+  const queue = [rootId];
+  while (queue.length) {
+    const nodeId = queue.shift()!;
+    if (!expanded.has(nodeId)) continue;
+    connectedNodeIds(graph, nodeId).forEach((connectedId) => {
+      if (visible.has(connectedId)) return;
+      visible.add(connectedId);
+      queue.push(connectedId);
+    });
+  }
+  return visible;
+}
+
 export default function GraphEditor() {
   const [graph, setGraph] = useState<GraphData>(() => normalizeGraph(defaultGraph));
   const graphRef = useRef(graph);
@@ -154,6 +179,8 @@ export default function GraphEditor() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
   const [exploreRootId, setExploreRootId] = useState<string | null>(null);
+  const [progressiveRootId, setProgressiveRootId] = useState<string | null>(null);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const svgRef = useRef<SVGSVGElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
@@ -214,6 +241,8 @@ export default function GraphEditor() {
       setGraphId(payload.graph.id);
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
+      setProgressiveRootId(null);
+      setExpandedNodes(new Set());
       setViewport({ x: 360, y: 300, zoom: 1 });
       setStatus("Salvo");
       setScreen("editor");
@@ -338,6 +367,8 @@ export default function GraphEditor() {
     setSelectedEdges(new Set());
     setConnectSource(null);
     setConnectMode(false);
+    setProgressiveRootId(null);
+    setExpandedNodes(new Set());
   }, [commitGraph]);
 
   useEffect(() => {
@@ -417,6 +448,29 @@ export default function GraphEditor() {
     },
     [viewport],
   );
+  const visibleNodeIds = useMemo(
+    () => progressivelyVisibleNodeIds(graph, progressiveRootId, expandedNodes),
+    [expandedNodes, graph, progressiveRootId],
+  );
+  const visibleNodes = useMemo(
+    () => graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
+    [graph.nodes, visibleNodeIds],
+  );
+  const visibleEdges = useMemo(
+    () => graph.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)),
+    [graph.edges, visibleNodeIds],
+  );
+  const hiddenNodeCount = graph.nodes.length - visibleNodes.length;
+
+  useEffect(() => {
+    if (progressiveRootId && !nodeMap.has(progressiveRootId)) {
+      setProgressiveRootId(null);
+      setExpandedNodes(new Set());
+      return;
+    }
+    setSelectedNodes((current) => new Set([...current].filter((id) => visibleNodeIds.has(id))));
+    setSelectedEdges((current) => new Set([...current].filter((id) => visibleEdges.some((edge) => edge.id === id))));
+  }, [nodeMap, progressiveRootId, visibleEdges, visibleNodeIds]);
 
   const beginTouchGesture = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.pointerType !== "touch") return;
@@ -699,13 +753,36 @@ export default function GraphEditor() {
     }
   };
 
+  const toggleNodeExpansion = (nodeId: string) => {
+    if (!progressiveRootId) {
+      setProgressiveRootId(nodeId);
+      setExpandedNodes(new Set());
+      setSelectedNodes(new Set([nodeId]));
+      setSelectedEdges(new Set());
+      setStatus("Nós conectados ocultos");
+      return;
+    }
+    setExpandedNodes((current) => {
+      const next = new Set(current);
+      if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+      return next;
+    });
+    setStatus(expandedNodes.has(nodeId) ? "Ramo oculto" : "Conexões expandidas");
+  };
+
+  const showAllNodes = () => {
+    setProgressiveRootId(null);
+    setExpandedNodes(new Set());
+    setStatus("Todos os nós visíveis");
+  };
+
   const fitGraph = () => {
-    if (!graph.nodes.length || !svgRef.current) {
+    if (!visibleNodes.length || !svgRef.current) {
       setViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
-    const xs = graph.nodes.map((node) => node.x);
-    const ys = graph.nodes.map((node) => node.y);
+    const xs = visibleNodes.map((node) => node.x);
+    const ys = visibleNodes.map((node) => node.y);
     const minX = Math.min(...xs) - 100;
     const maxX = Math.max(...xs) + 100;
     const minY = Math.min(...ys) - 100;
@@ -763,6 +840,8 @@ export default function GraphEditor() {
       commitGraph(normalizeGraph(JSON.parse(await file.text())));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
+      setProgressiveRootId(null);
+      setExpandedNodes(new Set());
       setStatus("Importado com sucesso");
     } catch {
       setStatus("Não foi possível importar o JSON");
@@ -848,6 +927,9 @@ export default function GraphEditor() {
           {connectMode && (
             <div className="connect-hint">{connectSource ? "Escolha o nó de destino" : "Escolha o nó de origem"} <button onClick={() => { setConnectMode(false); setConnectSource(null); }}>Cancelar</button></div>
           )}
+          {hiddenNodeCount > 0 && (
+            <div className="visibility-hint">{hiddenNodeCount} {hiddenNodeCount === 1 ? "nó oculto" : "nós ocultos"} <button onClick={showAllNodes}>Mostrar todos</button></div>
+          )}
           {helpOpen && (
             <div className="help-card">
               <strong>Atalhos</strong>
@@ -907,7 +989,7 @@ export default function GraphEditor() {
             <g transform={`scale(${viewport.zoom}) translate(${viewport.x} ${viewport.y})`}>
               <rect data-canvas="true" x={-5000} y={-5000} width={10000} height={10000} fill="url(#grid)" />
               <g aria-label="Conexões">
-                {graph.edges.map((edge) => {
+                {visibleEdges.map((edge) => {
                   const source = nodeMap.get(edge.source);
                   const target = nodeMap.get(edge.target);
                   if (!source || !target) return null;
@@ -947,10 +1029,12 @@ export default function GraphEditor() {
                 })}
               </g>
               <g aria-label="Nós">
-                {graph.nodes.map((node) => {
+                {visibleNodes.map((node) => {
                   const selected = selectedNodes.has(node.id);
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
+                  const connectionCount = connectedNodeIds(graph, node.id).length;
+                  const expanded = progressiveRootId ? expandedNodes.has(node.id) : true;
                   return (
                     <g
                       key={node.id}
@@ -969,6 +1053,23 @@ export default function GraphEditor() {
                       <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
                       <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                       <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
+                      {connectionCount > 0 && <g
+                        className={`node-visibility-toggle${expanded ? " open" : ""}`}
+                        transform="translate(38 -38)"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${expanded ? "Ocultar" : "Expandir"} conexões de ${node.label}`}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onPointerUp={(event) => event.stopPropagation()}
+                        onClick={(event) => { event.stopPropagation(); toggleNodeExpansion(node.id); }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleNodeExpansion(node.id);
+                          }
+                        }}
+                      ><circle r="14" /><text textAnchor="middle" dominantBaseline="central">{expanded ? "−" : "+"}</text></g>}
                       <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
                       <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
                     </g>
@@ -978,7 +1079,7 @@ export default function GraphEditor() {
             </g>
           </svg>
           <div className="canvas-footer">
-            <span>{graph.nodes.length} nós · {graph.edges.length} relações</span>
+            <span>{visibleNodes.length}/{graph.nodes.length} nós · {visibleEdges.length}/{graph.edges.length} relações</span>
             <div className="mobile-pan-control" aria-label="Mover canvas">
               <small>MOVER</small>
               {[

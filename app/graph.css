@@ -1863,6 +1863,9 @@ pre.export-code {
   pointer-events: none;
 }
 
+.graph-shell .graph-canvas.view-mode .node { pointer-events: auto; cursor: default; }
+.graph-shell .graph-canvas.view-mode .connection-port-hit { pointer-events: none; }
+
 .graph-shell .node {
   cursor: grab;
 }
@@ -2621,6 +2624,15 @@ pre.export-code {
 .graph-shell .node.source .connection-port,
 .graph-shell .graph-canvas.connecting .connection-port { opacity: 1; }
 .graph-shell .node.connection-target:hover > circle:first-of-type { stroke: #b79cff; stroke-width: 4; }
+
+.graph-shell .node-visibility-toggle { cursor: pointer; outline: none; }
+.graph-shell .node-visibility-toggle circle { fill: #6547c4; stroke: #d0c4ff; stroke-width: 2; filter: drop-shadow(0 4px 7px #0009); }
+.graph-shell .node-visibility-toggle.open circle { fill: #171d2c; stroke: #77829d; }
+.graph-shell .node-visibility-toggle text { fill: #fff; font-size: 18px; font-weight: 750; pointer-events: none; }
+.graph-shell .node-visibility-toggle:hover circle,
+.graph-shell .node-visibility-toggle:focus circle { stroke: #fff; filter: drop-shadow(0 0 7px #9b7af2); }
+.graph-shell .visibility-hint { position: absolute; z-index: 8; top: 14px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); padding: 7px 10px; border: 1px solid #303a52; border-radius: 10px; background: #101625e8; color: #8f9ab0; font-size: 10px; box-shadow: 0 8px 24px #0005; }
+.graph-shell .visibility-hint button { padding: 4px 7px; border: 0; border-radius: 6px; background: #6547c4; color: #fff; font-size: 9px; font-weight: 700; }
 
 .graph-shell dialog.export-dialog {
   margin: auto;
