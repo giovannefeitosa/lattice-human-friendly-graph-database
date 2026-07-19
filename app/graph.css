@@ -1955,9 +1955,40 @@ pre.export-code {
 }
 
 .graph-shell .mobile-pan-control,
-.graph-shell .mobile-mode-switch,
 .graph-shell .mobile-gesture-tip {
   display: none;
+}
+
+.graph-shell .mobile-mode-switch {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid rgba(145, 163, 226, 0.18);
+  border-radius: 12px;
+  background: rgba(10, 14, 31, 0.9);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.3), inset 0 1px rgba(255, 255, 255, 0.04);
+  pointer-events: auto;
+  backdrop-filter: blur(15px);
+}
+
+.graph-shell .mobile-mode-switch button {
+  width: auto;
+  height: 32px;
+  min-width: 62px;
+  padding: 0 9px;
+  gap: 5px;
+  border: 0;
+  border-radius: 8px;
+  color: #687492;
+  background: transparent;
+  font-size: 14px;
+}
+
+.graph-shell .mobile-mode-switch button.active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(88, 127, 226, 0.8), rgba(114, 88, 223, 0.8));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .graph-shell .zoom-control {
@@ -2212,7 +2243,8 @@ pre.export-code {
 }
 
 .graph-shell .form-stack input,
-.graph-shell .form-stack textarea {
+.graph-shell .form-stack textarea,
+.graph-shell .form-stack select {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid rgba(140, 159, 224, 0.15);
@@ -2227,7 +2259,8 @@ pre.export-code {
 }
 
 .graph-shell .form-stack input:focus,
-.graph-shell .form-stack textarea:focus {
+.graph-shell .form-stack textarea:focus,
+.graph-shell .form-stack select:focus {
   border-color: rgba(109, 137, 241, 0.67);
   background: rgba(7, 11, 27, 0.78);
   box-shadow: 0 0 0 3px rgba(82, 110, 223, 0.11);
@@ -2402,6 +2435,27 @@ pre.export-code {
 
 @keyframes graph-panel-in {
   from { opacity: 0; transform: translateX(18px); }
+}
+
+.graph-shell .category-add {
+  width: 100%;
+  border-style: dashed;
+}
+
+.graph-shell .category-creator {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 12px;
+  border: 1px solid rgba(140, 159, 224, 0.15);
+  border-radius: 11px;
+  background: rgba(4, 7, 17, 0.38);
+}
+
+.graph-shell .explore-button {
+  border-color: rgba(139, 108, 232, 0.42);
+  color: #d9ceff;
+  background: linear-gradient(145deg, rgba(54, 38, 94, 0.75), rgba(25, 23, 45, 0.8));
 }
 
 /* Saved graph library */
@@ -2679,6 +2733,10 @@ pre.export-code {
     color: #687492;
     background: transparent;
     font-size: 15px;
+  }
+
+  .graph-shell .mobile-mode-switch .mode-label {
+    display: none;
   }
 
   .graph-shell .mobile-mode-switch button.active {
