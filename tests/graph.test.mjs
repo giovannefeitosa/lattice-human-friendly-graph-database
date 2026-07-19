@@ -1,46 +1,109 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { GraphValidationError, graphToCypher, normalizeGraph } = await import("../lib/graph.ts");
+const {
+  GraphValidationError,
+  graphToCypher,
+  normalizeGraph,
+  removeCategoryField,
+  removeCustomCategory,
+  renameCategoryField,
+  toPropertyKey,
+} = await import("../lib/graph.ts");
 
-test("migrates legacy node types into graph-local categories deterministically", () => {
-  const graph = normalizeGraph({
-    name: " Legado composto ",
-    nodes: [
-      { id: "a", label: "Primeiro nó", type: "Concept", color: "#112233", x: 0, y: 0 },
-      { id: "b", label: "Segundo nó", type: "Concept", color: "#abcdef", x: 1, y: 1 },
-    ],
-    edges: [],
-  });
-
-  assert.equal(graph.name, "Legado composto");
-  assert.deepEqual(graph.categories, [{ id: "concept", name: "Concept", color: "#112233" }]);
-  assert.equal(graph.nodes[0].categoryId, "concept");
-  assert.equal(graph.nodes[1].color, "#112233");
-  assert.equal(graph.version, 2);
+const emptyGraph = (extra = {}) => ({
+  name: "Grafo v3",
+  version: 3,
+  categories: [],
+  nodes: [],
+  edges: [],
+  ...extra,
 });
 
-test("derives node type and color from its category", () => {
-  const graph = normalizeGraph({
-    version: 2,
-    categories: [{ id: "people", name: "Pessoa cliente", color: "#123456" }],
-    nodes: [{ id: "gio", label: " Gio da Silva ", categoryId: "people", type: "Ignored", color: "#ffffff", x: 0, y: 0 }],
-    edges: [],
-  });
-
-  assert.equal(graph.nodes[0].label, "Gio da Silva");
-  assert.equal(graph.nodes[0].type, "Pessoa cliente");
-  assert.equal(graph.nodes[0].color, "#123456");
-  assert.match(graphToCypher(graph), /:`Pessoa cliente`/);
+test("accepts only schema v3 and injects the three built-in categories", () => {
+  const graph = normalizeGraph(emptyGraph());
+  assert.equal(graph.version, 3);
+  assert.deepEqual(graph.categories.map(({ id, name }) => ({ id, name })), [
+    { id: "concept", name: "Concept" },
+    { id: "person", name: "Person" },
+    { id: "event", name: "Event" },
+  ]);
+  assert.throws(() => normalizeGraph({ name: "Legado", nodes: [], edges: [] }), /version must be 3/);
+  assert.throws(() => normalizeGraph({ ...emptyGraph(), version: 2 }), /version must be 3/);
 });
 
-test("rejects duplicate, invalid, and orphaned categories early", () => {
-  assert.throws(() => normalizeGraph({ categories: [
-    { id: "a", name: "Pessoa", color: "#123456" },
-    { id: "b", name: " pessoa ", color: "#654321" },
-  ], nodes: [], edges: [] }), GraphValidationError);
-  assert.throws(() => normalizeGraph({ categories: [{ id: "a", name: "Pessoa", color: "red" }], nodes: [], edges: [] }), GraphValidationError);
-  assert.throws(() => normalizeGraph({ categories: [{ id: "a", name: "Pessoa", color: "#123456" }], nodes: [
-    { id: "x", label: "X", categoryId: "missing", x: 0, y: 0 },
-  ], edges: [] }), GraphValidationError);
+test("defines editable Person defaults and locked Event bitemporal fields", () => {
+  const graph = normalizeGraph(emptyGraph());
+  assert.deepEqual(graph.categories.find(({ id }) => id === "person").fields, [
+    { key: "birthDate", type: "date" },
+    { key: "email", type: "text" },
+    { key: "phone", type: "text" },
+    { key: "whatsapp", type: "text" },
+    { key: "instagram", type: "text" },
+    { key: "linkedIn", type: "text" },
+    { key: "address", type: "text" },
+  ]);
+  assert.deepEqual(graph.categories.find(({ id }) => id === "event").fields, [
+    { key: "validFrom", type: "datetime" },
+    { key: "validTo", type: "datetime" },
+    { key: "recordedFrom", type: "datetime" },
+    { key: "recordedTo", type: "datetime" },
+  ]);
+  assert.throws(() => normalizeGraph(emptyGraph({ categories: [
+    { id: "event", name: "Event", color: "#123456", fields: [] },
+  ] })), /built-in schema/);
+});
+
+test("normalizes custom property keys and rejects unsupported schemas", () => {
+  assert.equal(toPropertyKey("Data de início"), "dataDeInicio");
+  const graph = normalizeGraph(emptyGraph({ categories: [
+    { id: "project", name: "Project", color: "#123456", fields: [{ key: "Data de início", type: "date" }] },
+  ] }));
+  assert.deepEqual(graph.categories.find(({ id }) => id === "project").fields, [{ key: "dataDeInicio", type: "date" }]);
+  assert.throws(() => normalizeGraph(emptyGraph({ categories: [
+    { id: "x", name: "X", color: "#123456", fields: [{ key: "content", type: "text" }] },
+  ] })), /reserved property name/);
+  assert.throws(() => normalizeGraph(emptyGraph({ categories: [
+    { id: "x", name: "X", color: "#123456", fields: [{ key: "field", type: "object" }] },
+  ] })), GraphValidationError);
+});
+
+test("derives node type and color and exports temporal properties as Cypher values", () => {
+  const graph = normalizeGraph(emptyGraph({
+    nodes: [{
+      id: "event-1",
+      label: "Lançamento",
+      categoryId: "event",
+      x: 0,
+      y: 0,
+      properties: { validFrom: "2026-07-19T18:00:00.000Z" },
+    }],
+  }));
+  assert.equal(graph.nodes[0].type, "Event");
+  assert.equal(graph.nodes[0].color, graph.categories.find(({ id }) => id === "event").color);
+  assert.match(graphToCypher(graph), /`validFrom`: datetime\('2026-07-19T18:00:00\.000Z'\)/);
+});
+
+test("renames and removes editable fields together with node values", () => {
+  const graph = normalizeGraph(emptyGraph({
+    categories: [{ id: "project", name: "Project", color: "#123456", fields: [{ key: "owner", type: "text" }] }],
+    nodes: [{ id: "p1", label: "Projeto", categoryId: "project", x: 0, y: 0, properties: { owner: "Gio" } }],
+  }));
+  const renamed = renameCategoryField(graph, "project", "owner", "project owner");
+  assert.deepEqual(renamed.categories.find(({ id }) => id === "project").fields, [{ key: "projectOwner", type: "text" }]);
+  assert.deepEqual({ ...renamed.nodes[0].properties }, { projectOwner: "Gio" });
+  const removed = removeCategoryField(renamed, "project", "projectOwner");
+  assert.deepEqual(removed.categories.find(({ id }) => id === "project").fields, []);
+  assert.deepEqual({ ...removed.nodes[0].properties }, {});
+});
+
+test("blocks deletion of built-in or used categories", () => {
+  const graph = normalizeGraph(emptyGraph({
+    categories: [{ id: "project", name: "Project", color: "#123456", fields: [] }],
+    nodes: [{ id: "p1", label: "Projeto", categoryId: "project", x: 0, y: 0, properties: {} }],
+  }));
+  assert.throws(() => removeCustomCategory(graph, "concept"), /cannot be deleted/);
+  assert.throws(() => removeCustomCategory(graph, "project"), /in use/);
+  const unused = normalizeGraph({ ...graph, nodes: [] });
+  assert.equal(removeCustomCategory(unused, "project").categories.some(({ id }) => id === "project"), false);
 });

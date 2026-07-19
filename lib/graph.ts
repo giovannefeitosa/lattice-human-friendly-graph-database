@@ -2,10 +2,18 @@ export type GraphScalar = string | number | boolean | null;
 export type GraphValue = GraphScalar | GraphScalar[];
 export type GraphProperties = Record<string, GraphValue>;
 
+export type CategoryFieldType = "text" | "number" | "boolean" | "date" | "datetime";
+
+export interface CategoryField {
+  key: string;
+  type: CategoryFieldType;
+}
+
 export interface NodeCategory {
   id: string;
   name: string;
   color: string;
+  fields: CategoryField[];
 }
 
 export interface Node {
@@ -51,13 +59,45 @@ export class GraphValidationError extends Error {
   }
 }
 
+export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event"] as const;
+export type BuiltInCategoryId = (typeof BUILT_IN_CATEGORY_IDS)[number];
+
+const PERSON_FIELDS: CategoryField[] = [
+  { key: "birthDate", type: "date" },
+  { key: "email", type: "text" },
+  { key: "phone", type: "text" },
+  { key: "whatsapp", type: "text" },
+  { key: "instagram", type: "text" },
+  { key: "linkedIn", type: "text" },
+  { key: "address", type: "text" },
+];
+
+const EVENT_FIELDS: CategoryField[] = [
+  { key: "validFrom", type: "datetime" },
+  { key: "validTo", type: "datetime" },
+  { key: "recordedFrom", type: "datetime" },
+  { key: "recordedTo", type: "datetime" },
+];
+
+export const BUILT_IN_CATEGORIES: ReadonlyArray<NodeCategory> = [
+  { id: "concept", name: "Concept", color: "#f5f7ff", fields: [] },
+  { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
+  { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
+];
+
+export function isBuiltInCategory(id: string): id is BuiltInCategoryId {
+  return BUILT_IN_CATEGORY_IDS.includes(id as BuiltInCategoryId);
+}
+
 export const defaultGraph: GraphData = {
   name: "Action & Dopamine",
-  version: 2,
+  version: 3,
   categories: [
-    { id: "concept", name: "Concept", color: "#f5f7ff" },
-    { id: "brain-region", name: "BrainRegion", color: "#8ba6ff" },
-    { id: "trait", name: "Trait", color: "#ff8e8e" },
+    { id: "concept", name: "Concept", color: "#f5f7ff", fields: [] },
+    { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
+    { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
+    { id: "brain-region", name: "BrainRegion", color: "#8ba6ff", fields: [] },
+    { id: "trait", name: "Trait", color: "#ff8e8e", fields: [] },
   ],
   nodes: [
     {
@@ -183,7 +223,10 @@ function finiteNumberAt(
   path: string,
   fallback: number,
 ): number {
-  if (value === undefined || value === null || value === "") return fallback;
+  if (value === undefined || value === null || value === "") {
+    if (Number.isFinite(fallback)) return fallback;
+    throw new GraphValidationError(`${path} must be a finite number.`);
+  }
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) {
     throw new GraphValidationError(`${path} must be a finite number.`);
@@ -233,12 +276,26 @@ function propertiesAt(value: unknown, path: string): GraphProperties {
   return properties;
 }
 
-function optionalString(value: unknown, path: string): string | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  return stringAt(value, path);
+export function toPropertyKey(value: string): string {
+  const words = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim()
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean);
+  if (!words.length) throw new GraphValidationError("Property name must contain letters or numbers.");
+  const key = words[0].toLowerCase() + words.slice(1)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join("");
+  if (!/^[a-z][a-zA-Z0-9]*$/.test(key)) {
+    throw new GraphValidationError("Property name must start with a letter.");
+  }
+  if (["properties", "content"].includes(key.toLowerCase())) {
+    throw new GraphValidationError(`"${key}" is a reserved property name.`);
+  }
+  return key;
 }
-
-const CATEGORY_COLORS = ["#8b5cf6", "#22d3ee", "#f59e0b", "#f43f5e", "#34d399", "#60a5fa"];
 
 function colorAt(value: unknown, path: string, fallback?: string): string {
   if ((value === undefined || value === null || value === "") && fallback) return fallback;
@@ -252,81 +309,81 @@ function categoryKey(name: string) {
   return name.trim().toLocaleLowerCase("pt-BR");
 }
 
-function categoryId(name: string, used: Set<string>) {
-  const base = name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || "categoria";
-  let id = base;
-  let suffix = 2;
-  while (used.has(id)) id = `${base}-${suffix++}`;
-  used.add(id);
-  return id;
+const CATEGORY_FIELD_TYPES = new Set<CategoryFieldType>(["text", "number", "boolean", "date", "datetime"]);
+
+function categoryFieldsAt(value: unknown, path: string): CategoryField[] {
+  if (!Array.isArray(value)) throw new GraphValidationError(`${path} must be an array.`);
+  const keys = new Set<string>();
+  return value.map((item, index) => {
+    const input = recordAt(item, `${path}[${index}]`);
+    const key = toPropertyKey(stringAt(input.key ?? input.name, `${path}[${index}].key`));
+    const type = stringAt(input.type, `${path}[${index}].type`) as CategoryFieldType;
+    if (!CATEGORY_FIELD_TYPES.has(type)) {
+      throw new GraphValidationError(`${path}[${index}].type is not supported.`);
+    }
+    if (keys.has(key)) throw new GraphValidationError(`Duplicate category field: "${key}".`);
+    keys.add(key);
+    return { key, type };
+  });
 }
 
-function normalizeCategories(root: Record<string, unknown>) {
-  if (root.categories !== undefined) {
-    if (!Array.isArray(root.categories)) {
-      throw new GraphValidationError("graph.categories must be an array.");
+function cloneFields(fields: ReadonlyArray<CategoryField>): CategoryField[] {
+  return fields.map((field) => ({ ...field }));
+}
+
+function normalizeCategories(root: Record<string, unknown>): NodeCategory[] {
+  if (!Array.isArray(root.categories)) throw new GraphValidationError("graph.categories must be an array.");
+  const parsed = root.categories.map((value, index): NodeCategory => {
+    const input = recordAt(value, `categories[${index}]`);
+    return {
+      id: stringAt(input.id, `categories[${index}].id`),
+      name: stringAt(input.name, `categories[${index}].name`),
+      color: colorAt(input.color, `categories[${index}].color`),
+      fields: categoryFieldsAt(input.fields, `categories[${index}].fields`),
+    };
+  });
+
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  const normalized: NodeCategory[] = [];
+  for (const category of parsed) {
+    const builtIn = BUILT_IN_CATEGORIES.find((item) => item.id === category.id);
+    if (builtIn && category.name !== builtIn.name) {
+      throw new GraphValidationError(`Built-in category "${category.id}" must be named "${builtIn.name}".`);
     }
-    const ids = new Set<string>();
-    const names = new Set<string>();
-    return root.categories.map((value, index): NodeCategory => {
-      const input = recordAt(value, `categories[${index}]`);
-      const id = stringAt(input.id, `categories[${index}].id`);
-      const name = stringAt(input.name, `categories[${index}].name`);
-      const key = categoryKey(name);
-      if (ids.has(id)) throw new GraphValidationError(`Duplicate category id: "${id}".`);
-      if (names.has(key)) throw new GraphValidationError(`Duplicate category name: "${name}".`);
-      ids.add(id);
-      names.add(key);
-      return { id, name, color: colorAt(input.color, `categories[${index}].color`) };
-    });
+    if (!builtIn && BUILT_IN_CATEGORIES.some((item) => categoryKey(item.name) === categoryKey(category.name))) {
+      throw new GraphValidationError(`"${category.name}" is reserved for a built-in category.`);
+    }
+    const nameKey = categoryKey(category.name);
+    if (ids.has(category.id)) throw new GraphValidationError(`Duplicate category id: "${category.id}".`);
+    if (names.has(nameKey)) throw new GraphValidationError(`Duplicate category name: "${category.name}".`);
+    ids.add(category.id);
+    names.add(nameKey);
+    if (category.id === "concept" && category.fields.length !== 0) {
+      throw new GraphValidationError("Concept cannot define custom fields.");
+    }
+    if (category.id === "event" && JSON.stringify(category.fields) !== JSON.stringify(EVENT_FIELDS)) {
+      throw new GraphValidationError("Event fields must match the built-in schema.");
+    }
+    normalized.push({ ...category, fields: cloneFields(category.fields) });
   }
 
-  const nodes = Array.isArray(root.nodes) ? root.nodes : [];
-  const categories: NodeCategory[] = [];
-  const byName = new Map<string, NodeCategory>();
-  const usedIds = new Set<string>();
-  for (let index = 0; index < nodes.length; index += 1) {
-    const input = recordAt(nodes[index], `nodes[${index}]`);
-    const rawLabels = Array.isArray(input.labels) ? input.labels : [];
-    const name = stringAt(input.type ?? rawLabels[0], `nodes[${index}].type`, "Concept");
-    const key = categoryKey(name);
-    if (byName.has(key)) continue;
-    const category = {
-      id: categoryId(name, usedIds),
-      name,
-      color: colorAt(input.color, `nodes[${index}].color`, CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]),
-    };
-    byName.set(key, category);
-    categories.push(category);
-  }
-  if (!categories.length) {
-    categories.push({ id: "conceito", name: "Conceito", color: CATEGORY_COLORS[0] });
-  }
-  return categories;
+  const builtIns = BUILT_IN_CATEGORIES.map((template) => {
+    const existing = normalized.find((category) => category.id === template.id);
+    return existing ?? { ...template, fields: cloneFields(template.fields) };
+  });
+  const custom = normalized.filter((category) => !isBuiltInCategory(category.id));
+  return [...builtIns, ...custom];
 }
 
 function normalizeNode(
   value: unknown,
   index: number,
   categories: NodeCategory[],
-  legacyCategories: boolean,
 ): Node {
   const path = `nodes[${index}]`;
   const input = recordAt(value, path);
-  const position =
-    input.position === undefined
-      ? undefined
-      : recordAt(input.position, `${path}.position`);
-  const label = stringAt(
-    input.label ?? input.name ?? input.title,
-    `${path}.label`,
-    `Untitled ${index + 1}`,
-  );
+  const label = stringAt(input.label, `${path}.label`);
   const rawLabels = input.labels;
   let labels: string[] | undefined;
   if (rawLabels !== undefined) {
@@ -337,26 +394,23 @@ function normalizeNode(
       stringAt(item, `${path}.labels[${labelIndex}]`),
     ))];
   }
-  const legacyType = stringAt(input.type ?? labels?.[0], `${path}.type`, "Concept");
-  const category = legacyCategories
-    ? categories.find((item) => categoryKey(item.name) === categoryKey(legacyType))
-    : categories.find((item) => item.id === input.categoryId);
+  const category = categories.find((item) => item.id === stringAt(input.categoryId, `${path}.categoryId`));
   if (!category) {
     throw new GraphValidationError(`${path}.categoryId must reference an existing category.`);
   }
   return {
-    id: stringAt(input.id, `${path}.id`, `node-${index + 1}`),
+    id: stringAt(input.id, `${path}.id`),
     label,
     categoryId: category.id,
     type: category.name,
     ...(typeof input.content === "string" ? { content: input.content } : {}),
     ...(labels?.length ? { labels } : {}),
-    x: finiteNumberAt(input.x ?? position?.x, `${path}.x`, index * 160),
-    y: finiteNumberAt(input.y ?? position?.y, `${path}.y`, 0),
-    ...(input.z !== undefined || position?.z !== undefined
-      ? { z: finiteNumberAt(input.z ?? position?.z, `${path}.z`, 0) }
+    x: finiteNumberAt(input.x, `${path}.x`, Number.NaN),
+    y: finiteNumberAt(input.y, `${path}.y`, Number.NaN),
+    ...(input.z !== undefined
+      ? { z: finiteNumberAt(input.z, `${path}.z`, 0) }
       : {}),
-    properties: propertiesAt(input.properties, `${path}.properties`),
+    properties: propertiesAt(recordAt(input.properties, `${path}.properties`), `${path}.properties`),
     color: category.color,
   };
 }
@@ -364,21 +418,17 @@ function normalizeNode(
 function normalizeEdge(value: unknown, index: number): Edge {
   const path = `edges[${index}]`;
   const input = recordAt(value, path);
-  const type = stringAt(
-    input.type ?? input.relationship ?? input.relation,
-    `${path}.type`,
-    "RELATED_TO",
-  );
-  const label = stringAt(input.label, `${path}.label`, type);
+  const type = stringAt(input.type, `${path}.type`);
+  const label = stringAt(input.label, `${path}.label`);
   const inhibitory = input.inhibitory === true || type.toUpperCase() === "INHIBITS";
   const blocked = input.blocked === true;
   return {
-    id: stringAt(input.id, `${path}.id`, `edge-${index + 1}`),
-    source: stringAt(input.source ?? input.from, `${path}.source`),
-    target: stringAt(input.target ?? input.to, `${path}.target`),
+    id: stringAt(input.id, `${path}.id`),
+    source: stringAt(input.source, `${path}.source`),
+    target: stringAt(input.target, `${path}.target`),
     type,
     label,
-    properties: propertiesAt(input.properties, `${path}.properties`),
+    properties: propertiesAt(recordAt(input.properties, `${path}.properties`), `${path}.properties`),
     ...(inhibitory ? { inhibitory: true } : {}),
     ...(blocked ? { blocked: true } : {}),
   };
@@ -396,17 +446,22 @@ export function normalizeGraph(input: unknown): GraphData {
   }
 
   const root = recordAt(parsed, "graph");
+  if (root.version !== 3) {
+    throw new GraphValidationError("graph.version must be 3. Automatic migrations are not supported.");
+  }
+  if (!Array.isArray(root.categories)) {
+    throw new GraphValidationError("graph.categories must be an array.");
+  }
   if (!Array.isArray(root.nodes)) {
     throw new GraphValidationError("graph.nodes must be an array.");
   }
-  if (root.edges !== undefined && !Array.isArray(root.edges)) {
+  if (!Array.isArray(root.edges)) {
     throw new GraphValidationError("graph.edges must be an array.");
   }
 
-  const legacyCategories = root.categories === undefined;
   const categories = normalizeCategories(root);
-  const nodes = root.nodes.map((node, index) => normalizeNode(node, index, categories, legacyCategories));
-  const rawEdges = (root.edges ?? []) as unknown[];
+  const nodes = root.nodes.map((node, index) => normalizeNode(node, index, categories));
+  const rawEdges = root.edges as unknown[];
   const edges = rawEdges.map(normalizeEdge);
   const nodeIds = new Set<string>();
   for (const node of nodes) {
@@ -438,14 +493,90 @@ export function normalizeGraph(input: unknown): GraphData {
     categories,
     nodes,
     edges,
-    ...(optionalString(root.name, "graph.name")
-      ? { name: optionalString(root.name, "graph.name") }
-      : {}),
-    version: 2,
+    name: stringAt(root.name, "graph.name"),
+    version: 3,
   };
 }
 
 export const normalizeGraphData = normalizeGraph;
+
+export function categoryFieldsLocked(categoryId: string): boolean {
+  return categoryId === "concept" || categoryId === "event";
+}
+
+export function renameCategoryField(
+  input: GraphData | unknown,
+  categoryId: string,
+  previousKey: string,
+  requestedKey: string,
+): GraphData {
+  const graph = normalizeGraph(input);
+  const category = graph.categories.find((item) => item.id === categoryId);
+  if (!category) throw new GraphValidationError("Category not found.");
+  if (categoryFieldsLocked(categoryId)) throw new GraphValidationError("This category's fields are locked.");
+  const nextKey = toPropertyKey(requestedKey);
+  if (!category.fields.some((field) => field.key === previousKey)) {
+    throw new GraphValidationError("Category field not found.");
+  }
+  if (nextKey !== previousKey && category.fields.some((field) => field.key === nextKey)) {
+    throw new GraphValidationError(`Duplicate category field: "${nextKey}".`);
+  }
+  if (nextKey !== previousKey && graph.nodes.some((node) =>
+    node.categoryId === categoryId && previousKey in node.properties && nextKey in node.properties
+  )) {
+    throw new GraphValidationError(`Property "${nextKey}" already has values in this category.`);
+  }
+  return normalizeGraph({
+    ...graph,
+    categories: graph.categories.map((item) => item.id === categoryId
+      ? { ...item, fields: item.fields.map((field) => field.key === previousKey ? { ...field, key: nextKey } : field) }
+      : item),
+    nodes: graph.nodes.map((node) => {
+      if (node.categoryId !== categoryId || !(previousKey in node.properties) || nextKey === previousKey) return node;
+      const properties = { ...node.properties, [nextKey]: node.properties[previousKey] };
+      delete properties[previousKey];
+      return { ...node, properties };
+    }),
+  });
+}
+
+export function removeCategoryField(
+  input: GraphData | unknown,
+  categoryId: string,
+  fieldKey: string,
+): GraphData {
+  const graph = normalizeGraph(input);
+  const category = graph.categories.find((item) => item.id === categoryId);
+  if (!category) throw new GraphValidationError("Category not found.");
+  if (categoryFieldsLocked(categoryId)) throw new GraphValidationError("This category's fields are locked.");
+  if (!category.fields.some((field) => field.key === fieldKey)) {
+    throw new GraphValidationError("Category field not found.");
+  }
+  return normalizeGraph({
+    ...graph,
+    categories: graph.categories.map((item) => item.id === categoryId
+      ? { ...item, fields: item.fields.filter((field) => field.key !== fieldKey) }
+      : item),
+    nodes: graph.nodes.map((node) => {
+      if (node.categoryId !== categoryId || !(fieldKey in node.properties)) return node;
+      const properties = { ...node.properties };
+      delete properties[fieldKey];
+      return { ...node, properties };
+    }),
+  });
+}
+
+export function removeCustomCategory(input: GraphData | unknown, categoryId: string): GraphData {
+  const graph = normalizeGraph(input);
+  if (isBuiltInCategory(categoryId)) throw new GraphValidationError("Built-in categories cannot be deleted.");
+  if (!graph.categories.some((category) => category.id === categoryId)) {
+    throw new GraphValidationError("Category not found.");
+  }
+  if (graph.nodes.some((node) => node.categoryId === categoryId)) {
+    throw new GraphValidationError("Categories in use cannot be deleted.");
+  }
+  return normalizeGraph({ ...graph, categories: graph.categories.filter((category) => category.id !== categoryId) });
+}
 
 export function parseGraphJson(json: string): GraphData {
   return normalizeGraph(json);
@@ -470,19 +601,28 @@ function cypherString(value: string): string {
   return `'${escaped}'`;
 }
 
-function cypherValue(value: GraphValue): string {
-  if (Array.isArray(value)) return `[${value.map(cypherValue).join(", ")}]`;
+function cypherValue(value: GraphValue, fieldType?: CategoryFieldType): string {
+  if (Array.isArray(value)) return `[${value.map((item) => cypherValue(item)).join(", ")}]`;
   if (value === null) return "null";
-  if (typeof value === "string") return cypherString(value);
+  if (typeof value === "string") {
+    if (fieldType === "date" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return `date(${cypherString(value)})`;
+    }
+    if (fieldType === "datetime" && Number.isFinite(Date.parse(value))) {
+      return `datetime(${cypherString(value)})`;
+    }
+    return cypherString(value);
+  }
   if (typeof value === "boolean") return value ? "true" : "false";
   return String(value);
 }
 
-function cypherProperties(properties: GraphProperties): string {
+function cypherProperties(properties: GraphProperties, fields: ReadonlyArray<CategoryField> = []): string {
   const entries = Object.entries(properties);
   if (entries.length === 0) return "";
+  const fieldTypes = new Map(fields.map((field) => [field.key, field.type]));
   return ` {${entries
-    .map(([key, value]) => `${cypherIdentifier(key)}: ${cypherValue(value)}`)
+    .map(([key, value]) => `${cypherIdentifier(key)}: ${cypherValue(value, fieldTypes.get(key))}`)
     .join(", ")}}`;
 }
 
@@ -499,10 +639,11 @@ export function graphToCypher(input: GraphData | unknown): string {
     if (!("id" in properties)) properties.id = node.id;
     if (!("name" in properties)) properties.name = node.label;
     if (node.content && !("content" in properties)) properties.content = node.content;
+    const fields = graph.categories.find((category) => category.id === node.categoryId)?.fields ?? [];
     const labels = [...new Set([node.type, ...(node.labels ?? [])])]
       .map((label) => `:${cypherIdentifier(label)}`)
       .join("");
-    return `(${variable}${labels}${cypherProperties(properties)})`;
+    return `(${variable}${labels}${cypherProperties(properties, fields)})`;
   });
 
   for (const edge of graph.edges) {

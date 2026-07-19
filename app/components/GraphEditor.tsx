@@ -24,6 +24,7 @@ import {
   layoutGraph,
 } from "@/lib/graph-layout";
 import GraphInspector from "./GraphInspector";
+import CategoryManager from "./CategoryManager";
 
 const NODE_RADIUS = 48;
 
@@ -44,6 +45,7 @@ type GraphSummary = {
   updatedAt: string;
 };
 type ExportPreview = { format: "JSON" | "Cypher"; contents: string };
+type InvalidGraph = { title: string; message: string; raw: string };
 type NodeContextMenuState = {
   nodeId: string;
   x: number;
@@ -155,11 +157,13 @@ function curvePath(source: GraphNode, target: GraphNode) {
 export default function GraphEditor() {
   const [graph, setGraph] = useState<GraphData>(() => normalizeGraph(defaultGraph));
   const graphRef = useRef(graph);
-  const [screen, setScreen] = useState<"library" | "editor">("library");
+  const [screen, setScreen] = useState<"library" | "editor" | "categories">("library");
+  const [categoryReturnScreen, setCategoryReturnScreen] = useState<"library" | "editor">("editor");
   const [graphs, setGraphs] = useState<GraphSummary[]>([]);
   const [libraryStatus, setLibraryStatus] = useState("Carregando grafos…");
   const [graphId, setGraphId] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
+  const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [viewport, setViewport] = useState<Viewport>({ x: 360, y: 300, zoom: 1 });
@@ -179,6 +183,7 @@ export default function GraphEditor() {
   const contextMenuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const invalidGraphDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
   const panHoldIntervalRef = useRef<number | null>(null);
@@ -262,10 +267,18 @@ export default function GraphEditor() {
   useEffect(() => () => cancelLongPress(), [cancelLongPress]);
 
   const commitGraph = useCallback((next: GraphData | ((current: GraphData) => GraphData)) => {
-    setGraph((current) => {
-      const value = typeof next === "function" ? next(current) : next;
-      return graphWithTimestamp(normalizeGraph(value));
-    });
+    const value = typeof next === "function" ? next(graphRef.current) : next;
+    try {
+      const normalized = graphWithTimestamp(normalizeGraph(value));
+      graphRef.current = normalized;
+      setGraph(normalized);
+    } catch (error) {
+      setInvalidGraph({
+        title: "Alteração inválida",
+        message: error instanceof Error ? error.message : "O JSON não segue o schema v3.",
+        raw: JSON.stringify(value, null, 2),
+      });
+    }
   }, []);
 
   const loadLibrary = useCallback(async () => {
@@ -286,13 +299,17 @@ export default function GraphEditor() {
     return () => window.clearTimeout(timer);
   }, [loadLibrary]);
 
-  const openGraph = useCallback(async (id: string) => {
+  const openGraph = useCallback(async (id: string, target: "editor" | "categories" = "editor") => {
     setLibraryStatus("Abrindo grafo…");
+    let raw = "";
     try {
       const response = await fetch(`/api/graphs?id=${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error();
-      const payload = (await response.json()) as { graph: { id: string; name: string; data: GraphData } };
-      const next = normalizeGraph({ ...payload.graph.data, name: payload.graph.name });
+      const payload = (await response.json()) as { graph: { id: string; name: string; raw: string } };
+      raw = payload.graph.raw;
+      const parsed = JSON.parse(raw) as GraphData;
+      raw = JSON.stringify(parsed, null, 2);
+      const next = normalizeGraph({ ...parsed, name: payload.graph.name });
       graphRef.current = next;
       setGraph(next);
       setGraphId(payload.graph.id);
@@ -302,14 +319,23 @@ export default function GraphEditor() {
       setExpandedNodes(new Set());
       setViewport({ x: 360, y: 300, zoom: 1 });
       setStatus("Salvo");
-      setScreen("editor");
-    } catch {
-      setLibraryStatus("Não foi possível abrir este grafo.");
+      setScreen(target);
+    } catch (error) {
+      if (raw) {
+        setInvalidGraph({
+          title: "Grafo incompatível",
+          message: error instanceof Error ? error.message : "O JSON não segue o schema v3.",
+          raw,
+        });
+        setLibraryStatus("O grafo não segue o schema atual.");
+      } else {
+        setLibraryStatus("Não foi possível abrir este grafo.");
+      }
     }
   }, []);
 
   const createGraphRecord = useCallback(async () => {
-    const initial = normalizeGraph({ name: "Novo grafo", version: 1, nodes: [], edges: [] });
+    const initial = normalizeGraph({ name: "Novo grafo", version: 3, categories: [], nodes: [], edges: [] });
     setLibraryStatus("Criando grafo…");
     try {
       const response = await fetch("/api/graphs", {
@@ -333,7 +359,7 @@ export default function GraphEditor() {
   }, [loadLibrary]);
 
   useEffect(() => {
-    if (screen !== "editor" || !graphId) return;
+    if ((screen !== "editor" && screen !== "categories") || !graphId) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setStatus("Salvando…");
@@ -360,6 +386,11 @@ export default function GraphEditor() {
     const dialog = exportDialogRef.current;
     if (exportPreview && dialog && !dialog.open) dialog.showModal();
   }, [exportPreview]);
+
+  useEffect(() => {
+    const dialog = invalidGraphDialogRef.current;
+    if (invalidGraph && dialog && !dialog.open) dialog.showModal();
+  }, [invalidGraph]);
 
   useEffect(() => {
     if (screen !== "editor") return;
@@ -409,7 +440,7 @@ export default function GraphEditor() {
       if (source === target) return id;
       if (!graphRef.current.nodes.some((node) => node.id === source)) return id;
       if (!graphRef.current.nodes.some((node) => node.id === target)) return id;
-      const edge = { id, source, target, type, properties: {} } as GraphEdge;
+      const edge = { id, source, target, type, label: type, properties: {} } as GraphEdge;
       commitGraph((current) => ({ ...current, edges: [...current.edges, edge] }));
       setSelectedEdges(new Set([id]));
       setSelectedNodes(new Set());
@@ -945,6 +976,16 @@ export default function GraphEditor() {
     }
   };
 
+  const copyInvalidGraph = async () => {
+    if (!invalidGraph) return;
+    try {
+      await navigator.clipboard.writeText(invalidGraph.raw);
+      setLibraryStatus("JSON copiado");
+    } catch {
+      setLibraryStatus("Selecione o JSON para copiar");
+    }
+  };
+
   const returnToLibrary = async () => {
     if (graphId) {
       setStatus("Salvando…");
@@ -965,21 +1006,52 @@ export default function GraphEditor() {
     await loadLibrary();
   };
 
+  const openCategoriesFromEditor = () => {
+    setCategoryReturnScreen("editor");
+    setScreen("categories");
+  };
+
+  const openCategoriesFromLibrary = async (id: string) => {
+    setCategoryReturnScreen("library");
+    await openGraph(id, "categories");
+  };
+
+  const returnFromCategories = () => {
+    if (categoryReturnScreen === "editor") {
+      setScreen("editor");
+      return;
+    }
+    void returnToLibrary();
+  };
+
   const importGraph = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    let raw = "";
     try {
-      commitGraph(normalizeGraph(JSON.parse(await file.text())));
+      raw = await file.text();
+      commitGraph(normalizeGraph(JSON.parse(raw)));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
       setProgressiveRootId(null);
       setExpandedNodes(new Set());
       setStatus("Importado com sucesso");
-    } catch {
+    } catch (error) {
+      setInvalidGraph({
+        title: "JSON incompatível",
+        message: error instanceof Error ? error.message : "O JSON não segue o schema v3.",
+        raw,
+      });
       setStatus("Não foi possível importar o JSON");
     }
   };
+
+  const invalidGraphModal = <dialog ref={invalidGraphDialogRef} className="dialog export-dialog invalid-graph-dialog" aria-labelledby="invalid-graph-title" onClose={() => setInvalidGraph(null)}>
+    <div className="dialog-header"><div><small>ERRO DE SCHEMA</small><h2 className="dialog-title" id="invalid-graph-title">{invalidGraph?.title}</h2></div><button className="icon-button" onClick={() => invalidGraphDialogRef.current?.close()} aria-label="Fechar">×</button></div>
+    <div className="dialog-body"><p className="invalid-graph-message">{invalidGraph?.message}</p><pre className="export-code"><code>{invalidGraph?.raw}</code></pre></div>
+    <div className="dialog-footer"><button onClick={() => invalidGraphDialogRef.current?.close()}>Fechar</button><button className="primary" onClick={() => void copyInvalidGraph()}>Copiar JSON</button></div>
+  </dialog>;
 
   if (screen === "library") {
     return (
@@ -1006,6 +1078,7 @@ export default function GraphEditor() {
                   <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                   <span><strong>{item.name}</strong><small>Atualizado {new Date(item.updatedAt).toLocaleDateString("pt-BR")}</small></span>
                 </button>
+                <button className="graph-card-categories" onClick={() => void openCategoriesFromLibrary(item.id)}>▦ Categorias</button>
                 <button className="graph-card-delete" onClick={() => void deleteGraphRecord(item)} aria-label={`Excluir ${item.name}`} title="Excluir grafo">×</button>
               </article>
             ))}
@@ -1014,8 +1087,13 @@ export default function GraphEditor() {
             </button>
           </div>
         </section>
+        {invalidGraphModal}
       </main>
     );
+  }
+
+  if (screen === "categories") {
+    return <><CategoryManager graph={graph} status={status} onCommit={commitGraph} onBack={returnFromCategories} />{invalidGraphModal}</>;
   }
 
   return (
@@ -1029,6 +1107,7 @@ export default function GraphEditor() {
         <CommittedTextInput className="graph-name-input" ariaLabel="Nome do grafo" value={graph.name || ""} onCommit={(name) => commitGraph((current) => ({ ...current, name }))} />
         <nav className="toolbar" aria-label="Ferramentas do grafo">
           <button onClick={() => createNode()} disabled={canvasMode === "view"} title="Adicionar nó">＋ Nó</button>
+          <button onClick={openCategoriesFromEditor} title="Gerenciar categorias">▦ Categorias</button>
           <button onClick={startConnecting} disabled={canvasMode === "view"} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
           <button onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} title="Excluir seleção">⌫ Excluir</button>
           <span className="divider" />
@@ -1292,6 +1371,7 @@ export default function GraphEditor() {
           onCommit={commitGraph}
           onDelete={deleteSelection}
           onClose={() => setInspectorOpen(false)}
+          onManageCategories={openCategoriesFromEditor}
         />}
       </section>
 
@@ -1306,6 +1386,7 @@ export default function GraphEditor() {
           <button className="primary" onClick={() => void copyExport()}>Copiar</button>
         </div>
       </dialog>
+      {invalidGraphModal}
 
       <style>{`
         .graph-shell{height:100dvh;min-height:620px;display:flex;flex-direction:column;color:#e8edf8;background:#080b14;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}

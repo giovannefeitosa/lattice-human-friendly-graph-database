@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         .where(and(eq(graphs.id, id), eq(graphs.ownerEmail, owner)))
         .limit(1);
       if (!row) return Response.json({ error: "Graph not found" }, { status: 404 });
-      return Response.json({ graph: { ...row, data: JSON.parse(row.graphJson) } });
+      return Response.json({ graph: { id: row.id, name: row.name, raw: row.graphJson, updatedAt: row.updatedAt } });
     }
 
     const rows = await db
