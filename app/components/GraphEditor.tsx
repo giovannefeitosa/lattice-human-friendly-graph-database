@@ -165,6 +165,7 @@ export default function GraphEditor() {
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
   const panHoldIntervalRef = useRef<number | null>(null);
+  const panAnimationRef = useRef<number | null>(null);
 
   useEffect(() => {
     graphRef.current = graph;
@@ -418,6 +419,8 @@ export default function GraphEditor() {
   const beginPan = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.button !== 0 && event.button !== 1) return;
     if (event.target !== event.currentTarget && (event.target as SVGElement).dataset.canvas !== "true") return;
+    if (panAnimationRef.current !== null) window.cancelAnimationFrame(panAnimationRef.current);
+    panAnimationRef.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       kind: "pan",
@@ -521,13 +524,40 @@ export default function GraphEditor() {
     setStatus("Conexão criada");
   };
 
-  const nudgeCanvas = useCallback((dx: number, dy: number) => {
-    setViewport((current) => ({
-      ...current,
-      x: current.x + dx / current.zoom,
-      y: current.y + dy / current.zoom,
-    }));
+  const stopPanAnimation = useCallback(() => {
+    if (panAnimationRef.current !== null) window.cancelAnimationFrame(panAnimationRef.current);
+    panAnimationRef.current = null;
   }, []);
+
+  const nudgeCanvas = useCallback((dx: number, dy: number) => {
+    stopPanAnimation();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setViewport((current) => ({
+        ...current,
+        x: current.x + dx / current.zoom,
+        y: current.y + dy / current.zoom,
+      }));
+      return;
+    }
+
+    const startedAt = window.performance.now();
+    const duration = 180;
+    let previousProgress = 0;
+    const animate = (now: number) => {
+      const progress = clamp((now - startedAt) / duration, 0, 1);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      const step = easedProgress - previousProgress;
+      previousProgress = easedProgress;
+      setViewport((current) => ({
+        ...current,
+        x: current.x + (dx * step) / current.zoom,
+        y: current.y + (dy * step) / current.zoom,
+      }));
+      if (progress < 1) panAnimationRef.current = window.requestAnimationFrame(animate);
+      else panAnimationRef.current = null;
+    };
+    panAnimationRef.current = window.requestAnimationFrame(animate);
+  }, [stopPanAnimation]);
 
   const stopPanHold = useCallback(() => {
     if (panHoldTimeoutRef.current !== null) window.clearTimeout(panHoldTimeoutRef.current);
@@ -544,7 +574,10 @@ export default function GraphEditor() {
     }, 320);
   }, [nudgeCanvas, stopPanHold]);
 
-  useEffect(() => stopPanHold, [stopPanHold]);
+  useEffect(() => () => {
+    stopPanHold();
+    stopPanAnimation();
+  }, [stopPanAnimation, stopPanHold]);
 
   const startConnecting = () => {
     if (connectMode) {
@@ -937,10 +970,10 @@ export default function GraphEditor() {
             <div className="mobile-pan-control" aria-label="Mover canvas">
               <small>MOVER</small>
               {[
-                { label: "←", dx: -88, dy: 0, aria: "Mover canvas para a esquerda" },
-                { label: "↑", dx: 0, dy: -88, aria: "Mover canvas para cima" },
-                { label: "↓", dx: 0, dy: 88, aria: "Mover canvas para baixo" },
-                { label: "→", dx: 88, dy: 0, aria: "Mover canvas para a direita" },
+                { label: "←", dx: 88, dy: 0, aria: "Navegar para a esquerda" },
+                { label: "↑", dx: 0, dy: 88, aria: "Navegar para cima" },
+                { label: "↓", dx: 0, dy: -88, aria: "Navegar para baixo" },
+                { label: "→", dx: -88, dy: 0, aria: "Navegar para a direita" },
               ].map((control) => (
                 <button
                   key={control.label}
