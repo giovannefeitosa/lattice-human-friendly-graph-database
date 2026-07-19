@@ -156,16 +156,23 @@ export default function GraphEditor() {
   const [status, setStatus] = useState("Salvo");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mobileHintOpen, setMobileHintOpen] = useState(true);
   const [exploreRootId, setExploreRootId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const propertyRef = useRef<HTMLTextAreaElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const panHoldTimeoutRef = useRef<number | null>(null);
+  const panHoldIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     graphRef.current = graph;
   }, [graph]);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 800px)").matches) setInspectorOpen(false);
+  }, []);
 
   const commitGraph = useCallback((next: GraphData | ((current: GraphData) => GraphData)) => {
     setGraph((current) => {
@@ -264,6 +271,17 @@ export default function GraphEditor() {
     const dialog = exportDialogRef.current;
     if (exportPreview && dialog && !dialog.open) dialog.showModal();
   }, [exportPreview]);
+
+  useEffect(() => {
+    if (screen !== "editor" || exploreRootId) return;
+    const canvas = svgRef.current;
+    if (!canvas) return;
+    const preventWebViewPull = (event: TouchEvent) => {
+      if (event.cancelable) event.preventDefault();
+    };
+    canvas.addEventListener("touchmove", preventWebViewPull, { passive: false });
+    return () => canvas.removeEventListener("touchmove", preventWebViewPull);
+  }, [exploreRootId, screen]);
 
   const createNode = useCallback(
     (position?: Point, partial: Partial<GraphNode> = {}) => {
@@ -502,6 +520,31 @@ export default function GraphEditor() {
     setConnectMode(false);
     setStatus("Conexão criada");
   };
+
+  const nudgeCanvas = useCallback((dx: number, dy: number) => {
+    setViewport((current) => ({
+      ...current,
+      x: current.x + dx / current.zoom,
+      y: current.y + dy / current.zoom,
+    }));
+  }, []);
+
+  const stopPanHold = useCallback(() => {
+    if (panHoldTimeoutRef.current !== null) window.clearTimeout(panHoldTimeoutRef.current);
+    if (panHoldIntervalRef.current !== null) window.clearInterval(panHoldIntervalRef.current);
+    panHoldTimeoutRef.current = null;
+    panHoldIntervalRef.current = null;
+  }, []);
+
+  const startPanHold = useCallback((dx: number, dy: number) => {
+    stopPanHold();
+    panHoldTimeoutRef.current = window.setTimeout(() => {
+      nudgeCanvas(dx, dy);
+      panHoldIntervalRef.current = window.setInterval(() => nudgeCanvas(dx, dy), 90);
+    }, 320);
+  }, [nudgeCanvas, stopPanHold]);
+
+  useEffect(() => stopPanHold, [stopPanHold]);
 
   const startConnecting = () => {
     if (connectMode) {
@@ -755,6 +798,12 @@ export default function GraphEditor() {
 
       <section className="workspace">
         <div className="canvas-wrap">
+          {mobileHintOpen && (
+            <div className="mobile-gesture-tip" role="status">
+              <span>Use as setas abaixo para mover sem puxar o navegador.</span>
+              <button onClick={() => setMobileHintOpen(false)} aria-label="Fechar dica">×</button>
+            </div>
+          )}
           {connectMode && (
             <div className="connect-hint">{connectSource ? "Escolha o nó de destino" : "Escolha o nó de origem"} <button onClick={() => { setConnectMode(false); setConnectSource(null); }}>Cancelar</button></div>
           )}
@@ -885,6 +934,27 @@ export default function GraphEditor() {
           </svg>
           <div className="canvas-footer">
             <span>{graph.nodes.length} nós · {graph.edges.length} relações</span>
+            <div className="mobile-pan-control" aria-label="Mover canvas">
+              <small>MOVER</small>
+              {[
+                { label: "←", dx: -88, dy: 0, aria: "Mover canvas para a esquerda" },
+                { label: "↑", dx: 0, dy: -88, aria: "Mover canvas para cima" },
+                { label: "↓", dx: 0, dy: 88, aria: "Mover canvas para baixo" },
+                { label: "→", dx: 88, dy: 0, aria: "Mover canvas para a direita" },
+              ].map((control) => (
+                <button
+                  key={control.label}
+                  aria-label={control.aria}
+                  onClick={() => nudgeCanvas(control.dx, control.dy)}
+                  onPointerDown={() => startPanHold(control.dx, control.dy)}
+                  onPointerUp={stopPanHold}
+                  onPointerCancel={stopPanHold}
+                  onPointerLeave={stopPanHold}
+                >
+                  {control.label}
+                </button>
+              ))}
+            </div>
             <div className="zoom-control">
               <button onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom / 1.2, .2, 3.5) }))}>−</button>
               <span>{Math.round(viewport.zoom * 100)}%</span>

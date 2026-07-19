@@ -35,6 +35,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   background: var(--graph-bg);
 }
 
@@ -1941,6 +1942,11 @@ pre.export-code {
   pointer-events: none;
 }
 
+.graph-shell .mobile-pan-control,
+.graph-shell .mobile-gesture-tip {
+  display: none;
+}
+
 .graph-shell .zoom-control {
   display: flex;
   overflow: hidden;
@@ -2350,8 +2356,25 @@ pre.export-code {
 
   .graph-shell .canvas-footer {
     right: 10px;
-    bottom: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
     left: 10px;
+    gap: 7px;
+  }
+
+  .graph-shell .canvas-footer > span {
+    display: none;
+  }
+
+  .graph-shell .mobile-pan-control {
+    margin-right: auto;
+  }
+
+  .graph-shell .mobile-pan-control small {
+    display: none;
+  }
+
+  .graph-shell .zoom-control span {
+    width: 40px;
   }
 
   .graph-shell .help-card {
@@ -2554,4 +2577,102 @@ pre.export-code {
   .library-topbar .brand > span:last-child { display: none; }
   .graph-grid { grid-template-columns: 1fr; }
   .graph-shell dialog.export-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }
+}
+
+@media (pointer: coarse) {
+  html,
+  body {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .graph-shell,
+  .graph-shell .workspace,
+  .graph-shell .canvas-wrap {
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
+  .graph-shell .graph-canvas {
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .graph-shell .mobile-gesture-tip {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    z-index: 8;
+    display: flex;
+    width: min(330px, calc(100% - 24px));
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 7px 7px 12px;
+    gap: 8px;
+    border: 1px solid rgba(139, 157, 239, 0.24);
+    border-radius: 13px;
+    color: #b9c2dd;
+    background: rgba(10, 14, 31, 0.92);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34);
+    font-size: 10px;
+    line-height: 1.35;
+    transform: translateX(-50%);
+    backdrop-filter: blur(15px);
+  }
+
+  .graph-shell .mobile-gesture-tip button {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    padding: 0;
+    font-size: 18px;
+  }
+
+  .graph-shell .mobile-pan-control {
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    gap: 2px;
+    border: 1px solid rgba(145, 163, 226, 0.18);
+    border-radius: 13px;
+    background: rgba(10, 14, 31, 0.9);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.04);
+    pointer-events: auto;
+    backdrop-filter: blur(15px);
+  }
+
+  .graph-shell .mobile-pan-control small {
+    padding: 0 5px;
+    color: #687492;
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+  }
+
+  .graph-shell .mobile-pan-control button,
+  .graph-shell .zoom-control button {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    color: #dce3f6;
+    background: transparent;
+    font-size: 18px;
+  }
+
+  .graph-shell .mobile-pan-control button:active,
+  .graph-shell .zoom-control button:active {
+    color: #fff;
+    background: rgba(118, 139, 226, 0.2);
+  }
+}
+
+@media (pointer: coarse) and (max-width: 540px) {
+  .graph-shell .mobile-pan-control small {
+    display: none;
+  }
 }
