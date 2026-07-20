@@ -66,11 +66,16 @@ export function getProgressiveVisibleNodeIds(
   graph: GraphData,
   rootId: string | null,
   expandedNodeIds: ReadonlySet<string>,
+  pinnedNodeIds: ReadonlySet<string> = new Set(),
 ): Set<string> {
   if (!rootId) return new Set(graph.nodes.map((node) => node.id));
   if (!graph.nodes.some((node) => node.id === rootId)) return new Set();
 
-  const visible = new Set([rootId]);
+  const graphNodeIds = new Set(graph.nodes.map((node) => node.id));
+  const visible = new Set([
+    rootId,
+    ...[...pinnedNodeIds].filter((nodeId) => graphNodeIds.has(nodeId)),
+  ]);
   const queue = [rootId];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const nodeId = queue[cursor];

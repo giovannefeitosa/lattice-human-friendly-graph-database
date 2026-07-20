@@ -62,6 +62,21 @@ test("handles cycles and isolated roots without revealing unrelated nodes", () =
   );
 });
 
+test("keeps newly added nodes visible during progressive exploration", () => {
+  const withNewNode = {
+    ...graph,
+    nodes: [...graph.nodes, node("new")],
+  };
+  assert.deepEqual(
+    [...getProgressiveVisibleNodeIds(withNewNode, "b", new Set(), new Set(["new"]))].sort(),
+    ["b", "new"],
+  );
+  assert.deepEqual(
+    [...getProgressiveVisibleNodeIds(withNewNode, "b", new Set(), new Set(["missing"]))],
+    ["b"],
+  );
+});
+
 test("produces deterministic finite positions without mutating the graph", () => {
   const original = structuredClone(graph);
   const first = layoutGraph(graph, { iterations: 180 });

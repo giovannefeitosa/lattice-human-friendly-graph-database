@@ -212,6 +212,7 @@ export default function GraphEditor() {
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
   const [progressiveRootId, setProgressiveRootId] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [explorationAddedNodes, setExplorationAddedNodes] = useState<Set<string>>(new Set());
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -348,6 +349,7 @@ export default function GraphEditor() {
       setSelectedEdges(new Set());
       setProgressiveRootId(null);
       setExpandedNodes(new Set());
+      setExplorationAddedNodes(new Set());
       setViewport({ x: 360, y: 300, zoom: 1 });
       setStatus("Salvo");
       setScreen(target);
@@ -458,11 +460,14 @@ export default function GraphEditor() {
         properties: asProperties(partial.properties),
       } as GraphNode;
       commitGraph((current) => ({ ...current, nodes: [...current.nodes, node] }));
+      if (progressiveRootId) {
+        setExplorationAddedNodes((current) => new Set(current).add(id));
+      }
       setSelectedNodes(new Set([id]));
       setSelectedEdges(new Set());
       return id;
     },
-    [commitGraph, viewport],
+    [commitGraph, progressiveRootId, viewport],
   );
 
   const createEdge = useCallback(
@@ -488,6 +493,7 @@ export default function GraphEditor() {
     setConnectMode(false);
     setProgressiveRootId(null);
     setExpandedNodes(new Set());
+    setExplorationAddedNodes(new Set());
   }, [commitGraph]);
 
   useEffect(() => {
@@ -568,8 +574,8 @@ export default function GraphEditor() {
     [viewport],
   );
   const visibleNodeIds = useMemo(
-    () => getProgressiveVisibleNodeIds(graph, progressiveRootId, expandedNodes),
-    [expandedNodes, graph, progressiveRootId],
+    () => getProgressiveVisibleNodeIds(graph, progressiveRootId, expandedNodes, explorationAddedNodes),
+    [expandedNodes, explorationAddedNodes, graph, progressiveRootId],
   );
   const visibleNodes = useMemo(
     () => graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
@@ -586,6 +592,7 @@ export default function GraphEditor() {
       if (progressiveRootId && !nodeMap.has(progressiveRootId)) {
         setProgressiveRootId(null);
         setExpandedNodes(new Set());
+        setExplorationAddedNodes(new Set());
         return;
       }
       setSelectedNodes((current) => new Set([...current].filter((id) => visibleNodeIds.has(id))));
@@ -965,6 +972,7 @@ export default function GraphEditor() {
     closeNodeContextMenu();
     setProgressiveRootId(nodeId);
     setExpandedNodes(new Set());
+    setExplorationAddedNodes(new Set());
     setSelectedNodes(new Set([nodeId]));
     setSelectedEdges(new Set());
     setConnectMode(false);
@@ -987,6 +995,7 @@ export default function GraphEditor() {
     const next = layoutGraph(graphRef.current);
     setProgressiveRootId(null);
     setExpandedNodes(new Set());
+    setExplorationAddedNodes(new Set());
     setConnectMode(false);
     setConnectSource(null);
     commitGraph(next);
@@ -1062,6 +1071,7 @@ export default function GraphEditor() {
       setSelectedEdges(new Set());
       setProgressiveRootId(null);
       setExpandedNodes(new Set());
+      setExplorationAddedNodes(new Set());
       setStatus("Importado com sucesso");
       setImportError("");
       setImportDraft("");
