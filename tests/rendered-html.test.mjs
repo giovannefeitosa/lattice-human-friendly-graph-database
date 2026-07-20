@@ -27,6 +27,8 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /navigator\.clipboard\.readText/);
   assert.match(editor, /Colar da área de transferência/);
   assert.match(editor, /Selecionar arquivo/);
+  assert.match(editor, /Ou cole manualmente com Ctrl\+V/);
+  assert.match(editor, /Importar texto/);
   assert.doesNotMatch(editor, /anchor\.download|URL\.createObjectURL/);
   assert.match(inspector, /<label>Content<textarea/);
   assert.match(editor, /CommittedTextInput/);

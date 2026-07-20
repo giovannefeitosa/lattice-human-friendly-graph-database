@@ -165,6 +165,7 @@ export default function GraphEditor() {
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
   const [importError, setImportError] = useState("");
+  const [importDraft, setImportDraft] = useState("");
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [viewport, setViewport] = useState<Viewport>({ x: 360, y: 300, zoom: 1 });
@@ -185,6 +186,7 @@ export default function GraphEditor() {
   const fileRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
   const importDialogRef = useRef<HTMLDialogElement>(null);
+  const importTextRef = useRef<HTMLTextAreaElement>(null);
   const invalidGraphDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
@@ -1035,6 +1037,7 @@ export default function GraphEditor() {
       setExpandedNodes(new Set());
       setStatus("Importado com sucesso");
       setImportError("");
+      setImportDraft("");
       importDialogRef.current?.close();
     } catch (error) {
       importDialogRef.current?.close();
@@ -1059,12 +1062,20 @@ export default function GraphEditor() {
       const raw = await navigator.clipboard.readText();
       if (!raw.trim()) {
         setImportError("A área de transferência está vazia.");
+        importTextRef.current?.focus();
         return;
       }
       importGraphText(raw);
     } catch {
-      setImportError("Não foi possível ler a área de transferência. Autorize o acesso e tente novamente.");
+      setImportError("A leitura automática foi bloqueada. Use Ctrl+V no campo abaixo.");
+      importTextRef.current?.focus();
     }
+  };
+
+  const openImportDialog = () => {
+    setImportError("");
+    importDialogRef.current?.showModal();
+    window.setTimeout(() => importTextRef.current?.focus(), 0);
   };
 
   const invalidGraphModal = <dialog ref={invalidGraphDialogRef} className="dialog export-dialog invalid-graph-dialog" aria-labelledby="invalid-graph-title" onClose={() => setInvalidGraph(null)}>
@@ -1133,7 +1144,7 @@ export default function GraphEditor() {
           <span className="divider" />
           <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
           <button onClick={showAllNodesAndLayout} title="Revelar, reorganizar e enquadrar todos os nós">◎ Visualizar tudo</button>
-          <button onClick={() => { setImportError(""); importDialogRef.current?.showModal(); }} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
+          <button onClick={openImportDialog} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
           <button onClick={exportJson} title="Exportar JSON">↓ JSON</button>
           <button className="primary" onClick={exportCypher} title="Exportar consultas Cypher">↓ Cypher</button>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
@@ -1403,6 +1414,11 @@ export default function GraphEditor() {
         <div className="dialog-body import-options">
           <button onClick={() => fileRef.current?.click()}><span>⇧</span><strong>Selecionar arquivo</strong><small>Escolha um arquivo .json</small></button>
           <button onClick={() => void importFromClipboard()}><span>▣</span><strong>Colar da área de transferência</strong><small>Importe o texto JSON copiado</small></button>
+          <label className="import-paste-field">
+            <span>Ou cole manualmente com Ctrl+V</span>
+            <textarea ref={importTextRef} value={importDraft} onChange={(event) => { setImportDraft(event.target.value); setImportError(""); }} placeholder="Cole o JSON aqui…" spellCheck={false} />
+          </label>
+          <button className="primary import-text-button" disabled={!importDraft.trim()} onClick={() => importGraphText(importDraft)}>Importar texto</button>
           {importError && <p className="error" role="alert">{importError}</p>}
         </div>
       </dialog>
