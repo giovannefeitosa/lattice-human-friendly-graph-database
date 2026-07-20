@@ -115,3 +115,15 @@ test("uses a stable topology order and separates initially overlapping nodes", (
     }
   }
 });
+
+test("keeps isolated nodes compact instead of creating distant outliers", () => {
+  const compactGraph = {
+    ...graph,
+    nodes: [...graph.nodes, node("isolated-a"), node("isolated-b"), node("isolated-c")],
+  };
+  const result = layoutGraph(compactGraph, { iterations: 300 });
+  const distances = result.nodes.map((item) => Math.hypot(item.x, item.y));
+  const widestDistance = Math.max(...distances);
+
+  assert.ok(widestDistance < 700, `expected a compact layout, got radius ${widestDistance}`);
+});

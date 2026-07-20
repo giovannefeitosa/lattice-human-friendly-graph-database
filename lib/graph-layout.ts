@@ -4,6 +4,8 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
+  forceX,
+  forceY,
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
@@ -121,6 +123,9 @@ export function layoutGraph(
       const rightKey = `${right.source}:${right.target}`;
       return leftKey.localeCompare(rightKey);
     });
+  const linkedNodeIds = new Set(
+    graph.edges.flatMap((edge) => [edge.source, edge.target]),
+  );
 
   const simulation = forceSimulation(simulationNodes)
     .randomSource(seededRandom())
@@ -137,6 +142,10 @@ export function layoutGraph(
       .radius(collisionRadius)
       .strength(1)
       .iterations(3))
+    .force("compact-x", forceX<LayoutNode>(centerX)
+      .strength((node) => linkedNodeIds.has(node.id) ? 0.018 : 0.14))
+    .force("compact-y", forceY<LayoutNode>(centerY)
+      .strength((node) => linkedNodeIds.has(node.id) ? 0.018 : 0.14))
     .force("center", forceCenter(centerX, centerY))
     .stop();
 
