@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,6 +15,12 @@ import {
 import {
   defaultGraph,
   graphToCypher,
+  NOTE_DEFAULT_HEIGHT,
+  NOTE_DEFAULT_WIDTH,
+  NOTE_MAX_HEIGHT,
+  NOTE_MAX_WIDTH,
+  NOTE_MIN_HEIGHT,
+  NOTE_MIN_WIDTH,
   normalizeGraph,
   type GraphData,
   type GraphEdge,
@@ -84,7 +91,8 @@ type IconToolButtonProps = {
 
 type DragState =
   | { kind: "pan"; start: Point; origin: Point }
-  | { kind: "nodes"; start: Point; positions: Record<string, Point> };
+  | { kind: "nodes"; start: Point; positions: Record<string, Point> }
+  | { kind: "note-resize"; nodeId: string; start: Point; width: number; height: number };
 
 declare global {
   interface Window {
@@ -193,10 +201,20 @@ function curveGeometry(source: GraphNode, target: GraphNode) {
   const nx = -dy / length;
   const ny = dx / length;
   const bend = Math.min(62, length * 0.15);
-  const startX = source.x + ux * NODE_RADIUS;
-  const startY = source.y + uy * NODE_RADIUS;
-  const endX = target.x - ux * (NODE_RADIUS + 5);
-  const endY = target.y - uy * (NODE_RADIUS + 5);
+  const boundaryDistance = (node: GraphNode, directionX: number, directionY: number) => {
+    if (node.categoryId !== "note") return NODE_RADIUS;
+    const halfWidth = (node.width ?? NOTE_DEFAULT_WIDTH) / 2;
+    const halfHeight = (node.height ?? NOTE_DEFAULT_HEIGHT) / 2;
+    const horizontal = Math.abs(directionX) > 0.0001 ? halfWidth / Math.abs(directionX) : Number.POSITIVE_INFINITY;
+    const vertical = Math.abs(directionY) > 0.0001 ? halfHeight / Math.abs(directionY) : Number.POSITIVE_INFINITY;
+    return Math.min(horizontal, vertical);
+  };
+  const sourceDistance = boundaryDistance(source, ux, uy);
+  const targetDistance = boundaryDistance(target, -ux, -uy);
+  const startX = source.x + ux * sourceDistance;
+  const startY = source.y + uy * sourceDistance;
+  const endX = target.x - ux * (targetDistance + 5);
+  const endY = target.y - uy * (targetDistance + 5);
   const controlX = (source.x + target.x) / 2 + nx * bend;
   const controlY = (source.y + target.y) / 2 + ny * bend;
   return {
@@ -204,6 +222,77 @@ function curveGeometry(source: GraphNode, target: GraphNode) {
     labelX: (startX + 2 * controlX + endX) / 4,
     labelY: (startY + 2 * controlY + endY) / 4 - 18,
   };
+}
+
+function noteTextColor(color: string) {
+  const value = color.match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (!value) return "#17120a";
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return (red * 299 + green * 587 + blue * 114) / 1000 >= 142 ? "#17120a" : "#fffdf5";
+}
+
+type NoteContentProps = {
+  content: string;
+  editing: boolean;
+  width: number;
+  height: number;
+  color: string;
+  onChange: (value: string) => void;
+  onBlur: (value: string) => void;
+  onCancel: () => void;
+};
+
+function NoteContent({ content, editing, width, height, color, onChange, onBlur, onCancel }: NoteContentProps) {
+  const textRef = useRef<HTMLDivElement | HTMLTextAreaElement | null>(null);
+  const [fontSize, setFontSize] = useState(18);
+
+  useLayoutEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+    let nextSize = 18;
+    element.style.fontSize = `${nextSize}px`;
+    while (nextSize > 10 && (element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1)) {
+      nextSize -= 1;
+      element.style.fontSize = `${nextSize}px`;
+    }
+    setFontSize(nextSize);
+  }, [content, editing, height, width]);
+
+  const sharedStyle = { color: noteTextColor(color), fontSize };
+  if (editing) {
+    return <textarea
+      ref={(element) => { textRef.current = element; }}
+      className="note-content note-editor"
+      aria-label="Conteúdo da nota"
+      autoFocus
+      spellCheck
+      value={content}
+      style={sharedStyle}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={(event) => onBlur(event.currentTarget.value)}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+        if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.blur();
+        }
+      }}
+    />;
+  }
+  return <div
+    ref={(element) => { textRef.current = element; }}
+    className={`note-content${content ? "" : " empty"}`}
+    style={sharedStyle}
+  >{content || "Duplo clique para editar"}</div>;
 }
 
 export default function GraphEditor() {
@@ -243,6 +332,8 @@ export default function GraphEditor() {
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [pinnedVisibleNodes, setPinnedVisibleNodes] = useState<Set<string>>(new Set());
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -265,6 +356,7 @@ export default function GraphEditor() {
   const touchPointsRef = useRef(new Map<number, Point>());
   const pinchRef = useRef<PinchState | null>(null);
   const longPressRef = useRef<LongPressState | null>(null);
+  const noteEditCancelledRef = useRef(false);
 
   const cancelLongPress = useCallback(() => {
     if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
@@ -584,6 +676,10 @@ export default function GraphEditor() {
         x: resolvedPosition.x,
         y: resolvedPosition.y,
         z: partial.z ?? 0,
+        ...(category.id === "note" ? {
+          width: clamp(partial.width ?? NOTE_DEFAULT_WIDTH, NOTE_MIN_WIDTH, NOTE_MAX_WIDTH),
+          height: clamp(partial.height ?? NOTE_DEFAULT_HEIGHT, NOTE_MIN_HEIGHT, NOTE_MAX_HEIGHT),
+        } : {}),
         color: category.color,
         properties: asProperties(partial.properties),
       } as GraphNode;
@@ -599,6 +695,34 @@ export default function GraphEditor() {
     },
     [commitGraph, focusRootId, snapToGrid, viewport],
   );
+
+  const startNoteEditing = (node: GraphNode) => {
+    if (canvasMode === "view" || node.categoryId !== "note") return;
+    noteEditCancelledRef.current = false;
+    setSelectedNodes(new Set([node.id]));
+    setSelectedEdges(new Set());
+    setNoteDraft(node.content ?? "");
+    setEditingNoteId(node.id);
+  };
+
+  const commitNoteEditing = (nodeId: string, content: string) => {
+    if (noteEditCancelledRef.current) {
+      noteEditCancelledRef.current = false;
+      return;
+    }
+    commitGraph((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => node.id === nodeId ? { ...node, content } : node),
+    }));
+    setEditingNoteId(null);
+    setStatus("Nota atualizada");
+  };
+
+  const cancelNoteEditing = () => {
+    noteEditCancelledRef.current = true;
+    setEditingNoteId(null);
+    setStatus("Edição cancelada");
+  };
 
   const createEdge = useCallback(
     (source: string, target: string, type = "RELATES_TO") => {
@@ -897,6 +1021,22 @@ export default function GraphEditor() {
     dragRef.current = { kind: "nodes", start: screenToWorld(event.clientX, event.clientY), positions };
   };
 
+  const beginNoteResize = (event: ReactPointerEvent<SVGRectElement>, node: GraphNode) => {
+    if (canvasMode === "view" || node.categoryId !== "note") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedNodes(new Set([node.id]));
+    setSelectedEdges(new Set());
+    svgRef.current?.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      kind: "note-resize",
+      nodeId: node.id,
+      start: screenToWorld(event.clientX, event.clientY),
+      width: node.width ?? NOTE_DEFAULT_WIDTH,
+      height: node.height ?? NOTE_DEFAULT_HEIGHT,
+    };
+  };
+
   const movePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (pinchRef.current) return;
     const drag = dragRef.current;
@@ -906,6 +1046,16 @@ export default function GraphEditor() {
         ...current,
         x: drag.origin.x + (event.clientX - drag.start.x) / current.zoom,
         y: drag.origin.y + (event.clientY - drag.start.y) / current.zoom,
+      }));
+      return;
+    }
+    if (drag.kind === "note-resize") {
+      const point = screenToWorld(event.clientX, event.clientY);
+      const width = clamp(drag.width + (point.x - drag.start.x) * 2, NOTE_MIN_WIDTH, NOTE_MAX_WIDTH);
+      const height = clamp(drag.height + (point.y - drag.start.y) * 2, NOTE_MIN_HEIGHT, NOTE_MAX_HEIGHT);
+      setGraph((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => node.id === drag.nodeId ? { ...node, width, height } : node),
       }));
       return;
     }
@@ -926,7 +1076,7 @@ export default function GraphEditor() {
 
   const endPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (pinchRef.current) return;
-    if (dragRef.current?.kind === "nodes") {
+    if (dragRef.current?.kind === "nodes" || dragRef.current?.kind === "note-resize") {
       commitGraph((current) => current);
     }
     dragRef.current = null;
@@ -1032,6 +1182,7 @@ export default function GraphEditor() {
     dragRef.current = null;
     setCanvasMode(mode);
     if (mode === "view") {
+      setEditingNoteId(null);
       setConnectMode(false);
       setConnectSource(null);
       setSelectedNodes(new Set());
@@ -1095,12 +1246,12 @@ export default function GraphEditor() {
       setViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
-    const xs = nodes.map((node) => node.x);
-    const ys = nodes.map((node) => node.y);
-    const minX = Math.min(...xs) - 100;
-    const maxX = Math.max(...xs) + 100;
-    const minY = Math.min(...ys) - 100;
-    const maxY = Math.max(...ys) + 100;
+    const halfWidth = (node: GraphNode) => node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : NODE_RADIUS;
+    const halfHeight = (node: GraphNode) => node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : NODE_RADIUS;
+    const minX = Math.min(...nodes.map((node) => node.x - halfWidth(node))) - 52;
+    const maxX = Math.max(...nodes.map((node) => node.x + halfWidth(node))) + 52;
+    const minY = Math.min(...nodes.map((node) => node.y - halfHeight(node))) - 52;
+    const maxY = Math.max(...nodes.map((node) => node.y + halfHeight(node))) + 72;
     const zoom = clamp(
       Math.min(svgRef.current.clientWidth / (maxX - minX), svgRef.current.clientHeight / (maxY - minY)),
       0.2,
@@ -1352,7 +1503,7 @@ export default function GraphEditor() {
             </label>
             <div>
               <strong style={{ display: "block", marginBottom: 5, color: "#dce2f3", fontSize: 12 }}>Categorias personalizadas</strong>
-              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person e Event são categorias fixas e serão incluídas automaticamente.</small>
+              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event e Note são categorias fixas e serão incluídas automaticamente.</small>
             </div>
             {createCategoryNames.map((categoryName, index) => (
               <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1598,14 +1749,26 @@ export default function GraphEditor() {
                   const scale = 1 + depth * 0.018;
                   const connectionCount = connectedNodeIds(graph, node.id).size;
                   const expanded = !collapsedNodes.has(node.id);
+                  const isNote = node.categoryId === "note";
+                  const noteWidth = node.width ?? NOTE_DEFAULT_WIDTH;
+                  const noteHeight = node.height ?? NOTE_DEFAULT_HEIGHT;
+                  const noteHalfWidth = noteWidth / 2;
+                  const noteHalfHeight = noteHeight / 2;
+                  const noteFold = 20;
                   return (
                     <g
                       key={node.id}
-                      className={`node${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
+                      className={`node${isNote ? " note-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
                       onPointerDown={(event) => { beginNodeDrag(event, node); beginNodeLongPress(event, node.id); }}
                       onPointerUp={(event) => handleNodeClick(event, node)}
+                      onDoubleClick={(event) => {
+                        if (!isNote) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        startNoteEditing(node);
+                      }}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -1613,6 +1776,12 @@ export default function GraphEditor() {
                         openNodeContextMenu(node.id, event.clientX, event.clientY, event.currentTarget);
                       }}
                       onKeyDown={(event) => {
+                        if (isNote && event.target === event.currentTarget && event.key === "Enter") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          startNoteEditing(node);
+                          return;
+                        }
                         if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
                         event.preventDefault();
                         event.stopPropagation();
@@ -1622,18 +1791,66 @@ export default function GraphEditor() {
                       role="button"
                       tabIndex={0}
                       aria-haspopup="menu"
-                      aria-label={`${node.label}, tipo ${node.type}`}
+                      aria-label={isNote ? `Nota: ${node.content || "vazia"}` : `${node.label}, tipo ${node.type}`}
                     >
-                      <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
-                      {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
-                      <circle r={NODE_RADIUS} fill={node.color} stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
-                      <circle r={NODE_RADIUS - 1} fill="url(#node-surface)" />
-                      <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
-                      <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
-                      <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
+                      {isNote ? <>
+                        <ellipse cy={noteHalfHeight + 13} rx={Math.max(54, noteWidth * .38)} ry="16" fill="#000" opacity=".3" filter="url(#node-shadow)" />
+                        {selected && <rect x={-noteHalfWidth - 8} y={-noteHalfHeight - 8} width={noteWidth + 16} height={noteHeight + 16} rx="12" fill="none" stroke={node.color} strokeOpacity=".3" strokeWidth="8" filter="url(#node-glow)" />}
+                        <path
+                          className="note-surface"
+                          d={`M ${-noteHalfWidth} ${-noteHalfHeight} H ${noteHalfWidth - noteFold} L ${noteHalfWidth} ${-noteHalfHeight + noteFold} V ${noteHalfHeight} H ${-noteHalfWidth} Z`}
+                          fill={node.color}
+                          stroke={selected ? "#fff" : "rgba(255,255,255,.34)"}
+                          strokeWidth={selected ? 2.5 : 1.5}
+                          filter="url(#node-shadow)"
+                        />
+                        <path
+                          className="note-fold"
+                          d={`M ${noteHalfWidth - noteFold} ${-noteHalfHeight} V ${-noteHalfHeight + noteFold} H ${noteHalfWidth}`}
+                          fill="rgba(255,255,255,.22)"
+                          stroke="rgba(0,0,0,.16)"
+                          strokeWidth="1"
+                        />
+                        <foreignObject x={-noteHalfWidth + 14} y={-noteHalfHeight + 14} width={noteWidth - 28} height={noteHeight - 28}>
+                          <NoteContent
+                            content={editingNoteId === node.id ? noteDraft : (node.content ?? "")}
+                            editing={editingNoteId === node.id}
+                            width={noteWidth - 28}
+                            height={noteHeight - 28}
+                            color={node.color}
+                            onChange={setNoteDraft}
+                            onBlur={(content) => commitNoteEditing(node.id, content)}
+                            onCancel={cancelNoteEditing}
+                          />
+                        </foreignObject>
+                        <circle className="connection-port-hit" cx={noteHalfWidth + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
+                        <circle className="connection-port" cx={noteHalfWidth + 5} cy="0" r="9" />
+                        {canvasMode === "edit" && <>
+                          <rect
+                            className="note-resize-handle"
+                            x={noteHalfWidth - 13}
+                            y={noteHalfHeight - 13}
+                            width="22"
+                            height="22"
+                            rx="5"
+                            role="button"
+                            aria-label="Redimensionar nota"
+                            onPointerDown={(event) => beginNoteResize(event, node)}
+                          />
+                          <path className="note-resize-mark" d={`M ${noteHalfWidth - 7} ${noteHalfHeight + 3} L ${noteHalfWidth + 3} ${noteHalfHeight - 7} M ${noteHalfWidth - 2} ${noteHalfHeight + 4} L ${noteHalfWidth + 4} ${noteHalfHeight - 2}`} />
+                        </>}
+                      </> : <>
+                        <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
+                        {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
+                        <circle r={NODE_RADIUS} fill={node.color} stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
+                        <circle r={NODE_RADIUS - 1} fill="url(#node-surface)" />
+                        <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
+                        <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
+                        <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
+                      </>}
                       {connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
-                        transform="translate(38 -38)"
+                        transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : "translate(38 -38)"}
                         role="button"
                         tabIndex={0}
                         aria-label={`${expanded ? "Ocultar" : "Expandir"} conexões de ${node.label}`}
@@ -1648,8 +1865,10 @@ export default function GraphEditor() {
                           }
                         }}
                       ><circle r="14" /><text textAnchor="middle" dominantBaseline="central">{expanded ? "−" : "+"}</text></g>}
-                      <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
-                      <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
+                      {!isNote && <>
+                        <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
+                        <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
+                      </>}
                     </g>
                   );
                 })}

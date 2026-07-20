@@ -103,7 +103,7 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
 
   assert.match(editor, /Criar novo grafo/);
   assert.match(editor, /Categorias personalizadas/);
-  assert.match(editor, /Concept, Person e Event são categorias fixas/);
+  assert.match(editor, /Concept, Person, Event e Note são categorias fixas/);
   assert.match(editor, /graph-card-rename/);
   assert.match(editor, /Voltar para Biblioteca[\s\S]*← <span>Biblioteca<\/span>/);
   assert.match(editor, /aria-live="polite"/);
@@ -112,4 +112,24 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
   assert.match(categories, /Nome do grafo · Enter para salvar/);
   assert.match(categories, /"FIXA" : "PERSONALIZADA"/);
   assert.match(styles, /@media \(max-width: 1180px\)[\s\S]*\.graph-shell \.graph-name-input[\s\S]*display: block/);
+});
+
+test("renders resizable Notes with direct content editing", async () => {
+  const [editor, styles, graph, thumbnail] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+    readFile(new URL("../lib/graph.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/graph-thumbnail.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(graph, /id: "note", name: "Note", color: "#ffd166"/);
+  assert.match(graph, /NOTE_DEFAULT_WIDTH = 220/);
+  assert.match(graph, /NOTE_MIN_HEIGHT = 100/);
+  assert.match(editor, /function NoteContent/);
+  assert.match(editor, /note-resize-handle/);
+  assert.match(editor, /startNoteEditing/);
+  assert.match(editor, /drag\.kind === "note-resize"/);
+  assert.match(editor, /categoryId !== "note"/);
+  assert.match(styles, /\.note-content[\s\S]*overflow: hidden/);
+  assert.match(styles, /\.note-resize-handle/);
+  assert.match(thumbnail, /<polygon points=/);
 });

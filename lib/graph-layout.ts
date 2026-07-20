@@ -24,6 +24,7 @@ interface LayoutNode extends SimulationNodeDatum {
   id: string;
   x: number;
   y: number;
+  collisionRadius: number;
 }
 
 interface LayoutLink extends SimulationLinkDatum<LayoutNode> {
@@ -34,6 +35,8 @@ interface LayoutLink extends SimulationLinkDatum<LayoutNode> {
 const DEFAULT_ITERATIONS = 300;
 const DEFAULT_LINK_DISTANCE = 220;
 const DEFAULT_COLLISION_RADIUS = 90;
+const DEFAULT_NOTE_WIDTH = 220;
+const DEFAULT_NOTE_HEIGHT = 160;
 
 function finiteOr(value: number | undefined, fallback: number) {
   return Number.isFinite(value) ? (value as number) : fallback;
@@ -155,6 +158,9 @@ export function layoutGraph(
       id: node.id,
       x: finiteOr(node.x, centerX + index * 8),
       y: finiteOr(node.y, centerY),
+      collisionRadius: options.collisionRadius === undefined && node.categoryId === "note"
+        ? Math.hypot((node.width ?? DEFAULT_NOTE_WIDTH) / 2, (node.height ?? DEFAULT_NOTE_HEIGHT) / 2) + 18
+        : collisionRadius,
     }));
   const simulationLinks: LayoutLink[] = graph.edges
     .map((edge) => ({ source: edge.source, target: edge.target }))
@@ -179,7 +185,7 @@ export function layoutGraph(
     .force("charge", forceManyBody<LayoutNode>()
       .strength(-850))
     .force("collision", forceCollide<LayoutNode>()
-      .radius(collisionRadius)
+      .radius((node) => node.collisionRadius)
       .strength(1)
       .iterations(3))
     .force("compact-x", forceX<LayoutNode>(centerX)

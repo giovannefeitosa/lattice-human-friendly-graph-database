@@ -20,16 +20,43 @@ const emptyGraph = (extra = {}) => ({
   ...extra,
 });
 
-test("accepts only schema v3 and injects the three built-in categories", () => {
+test("accepts only schema v3 and injects the four built-in categories", () => {
   const graph = normalizeGraph(emptyGraph());
   assert.equal(graph.version, 3);
   assert.deepEqual(graph.categories.map(({ id, name }) => ({ id, name })), [
     { id: "concept", name: "Concept" },
     { id: "person", name: "Person" },
     { id: "event", name: "Event" },
+    { id: "note", name: "Note" },
   ]);
   assert.throws(() => normalizeGraph({ name: "Legado", nodes: [], edges: [] }), /version must be 3/);
   assert.throws(() => normalizeGraph({ ...emptyGraph(), version: 2 }), /version must be 3/);
+});
+
+test("normalizes Note dimensions and preserves its visible content", () => {
+  const graph = normalizeGraph(emptyGraph({
+    nodes: [{
+      id: "note-1",
+      label: "Nome técnico",
+      categoryId: "note",
+      content: "Texto visível no canvas",
+      width: 80,
+      height: 900,
+      x: 10,
+      y: 20,
+      properties: {},
+    }],
+  }));
+  assert.equal(graph.nodes[0].type, "Note");
+  assert.equal(graph.nodes[0].content, "Texto visível no canvas");
+  assert.equal(graph.nodes[0].width, 140);
+  assert.equal(graph.nodes[0].height, 480);
+  assert.throws(() => normalizeGraph(emptyGraph({ categories: [
+    { id: "note", name: "Nota", color: "#ffd166", fields: [] },
+  ] })), /must be named "Note"/);
+  assert.throws(() => normalizeGraph(emptyGraph({ categories: [
+    { id: "note", name: "Note", color: "#ffd166", fields: [{ key: "extra", type: "text" }] },
+  ] })), /cannot define custom fields/);
 });
 
 test("defines editable Person defaults and locked Event bitemporal fields", () => {
@@ -103,6 +130,7 @@ test("blocks deletion of built-in or used categories", () => {
     nodes: [{ id: "p1", label: "Projeto", categoryId: "project", x: 0, y: 0, properties: {} }],
   }));
   assert.throws(() => removeCustomCategory(graph, "concept"), /cannot be deleted/);
+  assert.throws(() => removeCustomCategory(graph, "note"), /cannot be deleted/);
   assert.throws(() => removeCustomCategory(graph, "project"), /in use/);
   const unused = normalizeGraph({ ...graph, nodes: [] });
   assert.equal(removeCustomCategory(unused, "project").categories.some(({ id }) => id === "project"), false);

@@ -153,3 +153,20 @@ test("keeps isolated nodes compact instead of creating distant outliers", () => 
 
   assert.ok(widestDistance < 700, `expected a compact layout, got radius ${widestDistance}`);
 });
+
+test("uses persisted Note dimensions when avoiding layout collisions", () => {
+  const sized = {
+    categories: graph.categories,
+    nodes: [
+      { ...node("note"), categoryId: "note", type: "Note", width: 640, height: 480 },
+      node("concept"),
+    ],
+    edges: [],
+  };
+  const result = layoutGraph(sized, { iterations: 300 });
+  const [noteResult, conceptResult] = result.nodes;
+  assert.ok(
+    Math.hypot(noteResult.x - conceptResult.x, noteResult.y - conceptResult.y) > 420,
+    "expected the large Note to reserve more layout space",
+  );
+});

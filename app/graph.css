@@ -1899,6 +1899,76 @@ pre.export-code {
   fill: #fff;
 }
 
+.graph-shell .note-node .note-surface {
+  transition: filter 150ms ease, stroke 150ms ease;
+}
+
+.graph-shell .note-node:hover .note-surface {
+  filter: url(#node-shadow) brightness(1.035);
+}
+
+.graph-shell .note-content {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px 7px;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 620;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  resize: none;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+.graph-shell .note-content.empty {
+  opacity: .48;
+  font-style: italic;
+}
+
+.graph-shell .note-editor {
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .2);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .46);
+  caret-color: currentColor;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.graph-shell .note-editor::-webkit-scrollbar {
+  display: none;
+}
+
+.graph-shell .note-resize-handle {
+  fill: rgba(20, 17, 12, .18);
+  stroke: rgba(255, 255, 255, .55);
+  stroke-width: 1;
+  cursor: nwse-resize;
+  opacity: .28;
+  touch-action: none;
+  transition: opacity 150ms ease, fill 150ms ease;
+}
+
+.graph-shell .note-node:hover .note-resize-handle,
+.graph-shell .note-node.selected .note-resize-handle {
+  fill: rgba(20, 17, 12, .32);
+  opacity: .92;
+}
+
+.graph-shell .note-resize-mark {
+  fill: none;
+  stroke: rgba(255, 255, 255, .82);
+  stroke-linecap: round;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
 .graph-shell .edge .edge-line {
   fill: none;
   stroke: rgba(112, 132, 197, 0.5);

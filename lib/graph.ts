@@ -26,6 +26,8 @@ export interface Node {
   x: number;
   y: number;
   z?: number;
+  width?: number;
+  height?: number;
   properties: GraphProperties;
   color: string;
 }
@@ -59,7 +61,14 @@ export class GraphValidationError extends Error {
   }
 }
 
-export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event"] as const;
+export const NOTE_DEFAULT_WIDTH = 220;
+export const NOTE_DEFAULT_HEIGHT = 160;
+export const NOTE_MIN_WIDTH = 140;
+export const NOTE_MIN_HEIGHT = 100;
+export const NOTE_MAX_WIDTH = 640;
+export const NOTE_MAX_HEIGHT = 480;
+
+export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event", "note"] as const;
 export type BuiltInCategoryId = (typeof BUILT_IN_CATEGORY_IDS)[number];
 
 const PERSON_FIELDS: CategoryField[] = [
@@ -83,6 +92,7 @@ export const BUILT_IN_CATEGORIES: ReadonlyArray<NodeCategory> = [
   { id: "concept", name: "Concept", color: "#f5f7ff", fields: [] },
   { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
   { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
+  { id: "note", name: "Note", color: "#ffd166", fields: [] },
 ];
 
 export function isBuiltInCategory(id: string): id is BuiltInCategoryId {
@@ -96,6 +106,7 @@ export const defaultGraph: GraphData = {
     { id: "concept", name: "Concept", color: "#f5f7ff", fields: [] },
     { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
     { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
+    { id: "note", name: "Note", color: "#ffd166", fields: [] },
     { id: "brain-region", name: "BrainRegion", color: "#8ba6ff", fields: [] },
     { id: "trait", name: "Trait", color: "#ff8e8e", fields: [] },
   ],
@@ -359,8 +370,8 @@ function normalizeCategories(root: Record<string, unknown>): NodeCategory[] {
     if (names.has(nameKey)) throw new GraphValidationError(`Duplicate category name: "${category.name}".`);
     ids.add(category.id);
     names.add(nameKey);
-    if (category.id === "concept" && category.fields.length !== 0) {
-      throw new GraphValidationError("Concept cannot define custom fields.");
+    if ((category.id === "concept" || category.id === "note") && category.fields.length !== 0) {
+      throw new GraphValidationError(`${category.name} cannot define custom fields.`);
     }
     if (category.id === "event" && JSON.stringify(category.fields) !== JSON.stringify(EVENT_FIELDS)) {
       throw new GraphValidationError("Event fields must match the built-in schema.");
@@ -409,6 +420,12 @@ function normalizeNode(
     y: finiteNumberAt(input.y, `${path}.y`, Number.NaN),
     ...(input.z !== undefined
       ? { z: finiteNumberAt(input.z, `${path}.z`, 0) }
+      : {}),
+    ...(category.id === "note"
+      ? {
+          width: Math.min(NOTE_MAX_WIDTH, Math.max(NOTE_MIN_WIDTH, finiteNumberAt(input.width, `${path}.width`, NOTE_DEFAULT_WIDTH))),
+          height: Math.min(NOTE_MAX_HEIGHT, Math.max(NOTE_MIN_HEIGHT, finiteNumberAt(input.height, `${path}.height`, NOTE_DEFAULT_HEIGHT))),
+        }
       : {}),
     properties: propertiesAt(recordAt(input.properties, `${path}.properties`), `${path}.properties`),
     color: category.color,
@@ -521,7 +538,7 @@ export function normalizeGraph(input: unknown): GraphData {
 export const normalizeGraphData = normalizeGraph;
 
 export function categoryFieldsLocked(categoryId: string): boolean {
-  return categoryId === "concept" || categoryId === "event";
+  return categoryId === "concept" || categoryId === "event" || categoryId === "note";
 }
 
 export function renameCategoryField(
