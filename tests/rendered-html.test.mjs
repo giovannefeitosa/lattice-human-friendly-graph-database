@@ -39,6 +39,10 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(categories, /removeCustomCategory/);
   assert.match(editor, /Copiar JSON/);
   assert.match(editor, /connection-port-hit/);
+  assert.match(editor, /Já existe uma conexão nesta direção/);
+  assert.match(editor, /pairEdges\.length >= 2/);
+  assert.match(editor, /markerEnd="url\(#arrow\)"/);
+  assert.match(editor, /function curveGeometry/);
   assert.match(editor, /partial\.categoryId \?\? graph\.nodes\.at\(-1\)\?\.categoryId/);
   assert.match(editor, /const GRID_SIZE = 24/);
   assert.match(editor, /label="Encaixar na grade"/);

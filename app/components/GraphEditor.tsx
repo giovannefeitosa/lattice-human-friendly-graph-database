@@ -92,7 +92,7 @@ declare global {
       getGraph: () => GraphData;
       setGraph: (graph: GraphData) => void;
       addNode: (node?: Partial<GraphNode>) => string;
-      connect: (source: string, target: string, type?: string) => string;
+      connect: (source: string, target: string, type?: string) => string | null;
       clear: () => void;
       exportCypher: () => string;
     };
@@ -184,16 +184,26 @@ function asProperties(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function curvePath(source: GraphNode, target: GraphNode) {
+function curveGeometry(source: GraphNode, target: GraphNode) {
   const dx = target.x - source.x;
   const dy = target.y - source.y;
   const length = Math.max(Math.hypot(dx, dy), 1);
+  const ux = dx / length;
+  const uy = dy / length;
   const nx = -dy / length;
   const ny = dx / length;
   const bend = Math.min(62, length * 0.15);
-  const mx = (source.x + target.x) / 2 + nx * bend;
-  const my = (source.y + target.y) / 2 + ny * bend;
-  return `M ${source.x} ${source.y} Q ${mx} ${my} ${target.x} ${target.y}`;
+  const startX = source.x + ux * NODE_RADIUS;
+  const startY = source.y + uy * NODE_RADIUS;
+  const endX = target.x - ux * (NODE_RADIUS + 5);
+  const endY = target.y - uy * (NODE_RADIUS + 5);
+  const controlX = (source.x + target.x) / 2 + nx * bend;
+  const controlY = (source.y + target.y) / 2 + ny * bend;
+  return {
+    path: `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`,
+    labelX: (startX + 2 * controlX + endX) / 4,
+    labelY: (startY + 2 * controlY + endY) / 4 - 18,
+  };
 }
 
 export default function GraphEditor() {
@@ -592,10 +602,25 @@ export default function GraphEditor() {
 
   const createEdge = useCallback(
     (source: string, target: string, type = "RELATES_TO") => {
+      if (source === target) {
+        setStatus("Escolha outro nó como destino");
+        return null;
+      }
+      if (!graphRef.current.nodes.some((node) => node.id === source)) return null;
+      if (!graphRef.current.nodes.some((node) => node.id === target)) return null;
+      const pairEdges = graphRef.current.edges.filter((edge) =>
+        (edge.source === source && edge.target === target) ||
+        (edge.source === target && edge.target === source)
+      );
+      if (pairEdges.some((edge) => edge.source === source && edge.target === target)) {
+        setStatus("Já existe uma conexão nesta direção");
+        return null;
+      }
+      if (pairEdges.length >= 2) {
+        setStatus("Limite de duas conexões entre estes nós");
+        return null;
+      }
       const id = uid("edge");
-      if (source === target) return id;
-      if (!graphRef.current.nodes.some((node) => node.id === source)) return id;
-      if (!graphRef.current.nodes.some((node) => node.id === target)) return id;
       const edge = { id, source, target, type, label: type, properties: {} } as GraphEdge;
       commitGraph((current) => ({ ...current, edges: [...current.edges, edge] }));
       setSelectedEdges(new Set([id]));
@@ -939,7 +964,8 @@ export default function GraphEditor() {
       setStatus("Escolha outro nó como destino");
       return;
     }
-    createEdge(connectSource, node.id);
+    const edgeId = createEdge(connectSource, node.id);
+    if (!edgeId) return;
     setConnectSource(null);
     setConnectMode(false);
     setStatus("Conexão criada");
@@ -1046,7 +1072,8 @@ export default function GraphEditor() {
       return;
     }
     if (connectSource !== node.id) {
-      createEdge(connectSource, node.id);
+      const edgeId = createEdge(connectSource, node.id);
+      if (!edgeId) return;
       setStatus("Conexão criada");
       setConnectSource(null);
       setConnectMode(false);
@@ -1436,7 +1463,7 @@ export default function GraphEditor() {
         <nav className="toolbar" aria-label="Ferramentas do grafo">
           <IconToolButton id="new-node" icon="＋" label="Novo nó" description="Adicionar um nó ao centro da tela" onClick={() => createNode()} disabled={canvasMode === "view"} />
           <IconToolButton id="categories" icon="▦" label="Categorias" description="Gerenciar categorias e propriedades" onClick={openCategoriesFromEditor} />
-          <IconToolButton id="connect" icon="↗" label="Conectar" description="Escolher a origem e o destino" onClick={startConnecting} disabled={canvasMode === "view"} active={connectMode} />
+          <IconToolButton id="connect" icon="↗" label="Conectar" description="Escolher origem e destino; uma conexão por direção" onClick={startConnecting} disabled={canvasMode === "view"} active={connectMode} />
           <IconToolButton
             id="snap-to-grid"
             icon="⌗"
@@ -1534,10 +1561,8 @@ export default function GraphEditor() {
                   const source = nodeMap.get(edge.source);
                   const target = nodeMap.get(edge.target);
                   if (!source || !target) return null;
-                  const path = curvePath(source, target);
+                  const geometry = curveGeometry(source, target);
                   const selected = selectedEdges.has(edge.id);
-                  const labelX = (source.x + target.x) / 2;
-                  const labelY = (source.y + target.y) / 2 - 18;
                   return (
                     <g
                       key={edge.id}
@@ -1559,9 +1584,9 @@ export default function GraphEditor() {
                         });
                       }}
                     >
-                      <path className="edge-hit" d={path} />
-                      <path className="edge-line" d={path} markerEnd="url(#arrow)" />
-                      <g transform={`translate(${labelX} ${labelY})`}>
+                      <path className="edge-hit" d={geometry.path} />
+                      <path className="edge-line" d={geometry.path} markerEnd="url(#arrow)" />
+                      <g transform={`translate(${geometry.labelX} ${geometry.labelY})`}>
                         <rect x={-Math.max(34, edge.type.length * 3.5)} y={-10} width={Math.max(68, edge.type.length * 7)} height={20} rx={10} />
                         <text textAnchor="middle" dominantBaseline="middle">{edge.type}</text>
                       </g>

@@ -472,6 +472,8 @@ export function normalizeGraph(input: unknown): GraphData {
   }
 
   const edgeIds = new Set<string>();
+  const edgeDirections = new Set<string>();
+  const edgePairCounts = new Map<string, number>();
   for (const edge of edges) {
     if (edgeIds.has(edge.id)) {
       throw new GraphValidationError(`Duplicate edge id: "${edge.id}".`);
@@ -487,6 +489,24 @@ export function normalizeGraph(input: unknown): GraphData {
         `Edge "${edge.id}" references missing target node "${edge.target}".`,
       );
     }
+    if (edge.source === edge.target) {
+      throw new GraphValidationError(`Edge "${edge.id}" must connect two different nodes.`);
+    }
+    const directionKey = JSON.stringify([edge.source, edge.target]);
+    if (edgeDirections.has(directionKey)) {
+      throw new GraphValidationError(
+        `Nodes "${edge.source}" and "${edge.target}" already have an edge in this direction.`,
+      );
+    }
+    edgeDirections.add(directionKey);
+    const pairKey = JSON.stringify([edge.source, edge.target].sort());
+    const pairCount = (edgePairCounts.get(pairKey) ?? 0) + 1;
+    if (pairCount > 2) {
+      throw new GraphValidationError(
+        `Nodes "${edge.source}" and "${edge.target}" cannot have more than two edges.`,
+      );
+    }
+    edgePairCounts.set(pairKey, pairCount);
   }
 
   return {

@@ -107,3 +107,36 @@ test("blocks deletion of built-in or used categories", () => {
   const unused = normalizeGraph({ ...graph, nodes: [] });
   assert.equal(removeCustomCategory(unused, "project").categories.some(({ id }) => id === "project"), false);
 });
+
+test("allows at most one directed edge each way between two nodes", () => {
+  const nodes = ["a", "b"].map((id) => ({
+    id,
+    label: id.toUpperCase(),
+    categoryId: "concept",
+    x: 0,
+    y: 0,
+    properties: {},
+  }));
+  const edge = (id, source, target) => ({
+    id,
+    source,
+    target,
+    type: "RELATES_TO",
+    label: "RELATES_TO",
+    properties: {},
+  });
+
+  const bidirectional = normalizeGraph(emptyGraph({
+    nodes,
+    edges: [edge("ab", "a", "b"), edge("ba", "b", "a")],
+  }));
+  assert.equal(bidirectional.edges.length, 2);
+  assert.throws(() => normalizeGraph(emptyGraph({
+    nodes,
+    edges: [edge("ab-1", "a", "b"), edge("ab-2", "a", "b")],
+  })), /already have an edge in this direction/);
+  assert.throws(() => normalizeGraph(emptyGraph({
+    nodes,
+    edges: [edge("aa", "a", "a")],
+  })), /two different nodes/);
+});
