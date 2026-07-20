@@ -21,7 +21,7 @@ import {
 } from "@/lib/graph";
 import {
   connectedNodeIds,
-  getProgressiveVisibleNodeIds,
+  getHierarchicalVisibleNodeIds,
   layoutGraph,
 } from "@/lib/graph-layout";
 import GraphInspector from "./GraphInspector";
@@ -239,8 +239,8 @@ export default function GraphEditor() {
   const [nodeNameFocusId, setNodeNameFocusId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
-  const [visibilityRootId, setVisibilityRootId] = useState<string | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [focusRootId, setFocusRootId] = useState<string | null>(null);
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [pinnedVisibleNodes, setPinnedVisibleNodes] = useState<Set<string>>(new Set());
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -381,8 +381,8 @@ export default function GraphEditor() {
       setGraphId(payload.graph.id);
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
-      setVisibilityRootId(null);
-      setExpandedNodes(new Set());
+      setFocusRootId(null);
+      setCollapsedNodes(new Set());
       setPinnedVisibleNodes(new Set());
       setViewport({ x: 360, y: 300, zoom: 1 });
       setStatus("Salvo");
@@ -588,7 +588,7 @@ export default function GraphEditor() {
         properties: asProperties(partial.properties),
       } as GraphNode;
       commitGraph((current) => ({ ...current, nodes: [...current.nodes, node] }));
-      if (visibilityRootId) {
+      if (focusRootId) {
         setPinnedVisibleNodes((current) => new Set(current).add(id));
       }
       setSelectedNodes(new Set([id]));
@@ -597,7 +597,7 @@ export default function GraphEditor() {
       setNodeNameFocusId(id);
       return id;
     },
-    [commitGraph, snapToGrid, viewport, visibilityRootId],
+    [commitGraph, focusRootId, snapToGrid, viewport],
   );
 
   const createEdge = useCallback(
@@ -636,8 +636,8 @@ export default function GraphEditor() {
     setSelectedEdges(new Set());
     setConnectSource(null);
     setConnectMode(false);
-    setVisibilityRootId(null);
-    setExpandedNodes(new Set());
+    setFocusRootId(null);
+    setCollapsedNodes(new Set());
     setPinnedVisibleNodes(new Set());
   }, [commitGraph]);
 
@@ -720,8 +720,8 @@ export default function GraphEditor() {
     [viewport],
   );
   const visibleNodeIds = useMemo(
-    () => getProgressiveVisibleNodeIds(graph, visibilityRootId, expandedNodes, pinnedVisibleNodes),
-    [expandedNodes, graph, pinnedVisibleNodes, visibilityRootId],
+    () => getHierarchicalVisibleNodeIds(graph, focusRootId, collapsedNodes, pinnedVisibleNodes),
+    [collapsedNodes, focusRootId, graph, pinnedVisibleNodes],
   );
   const visibleNodes = useMemo(
     () => graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
@@ -735,9 +735,9 @@ export default function GraphEditor() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (visibilityRootId && !nodeMap.has(visibilityRootId)) {
-        setVisibilityRootId(null);
-        setExpandedNodes(new Set());
+      if (focusRootId && !nodeMap.has(focusRootId)) {
+        setFocusRootId(null);
+        setCollapsedNodes(new Set());
         setPinnedVisibleNodes(new Set());
         return;
       }
@@ -745,7 +745,7 @@ export default function GraphEditor() {
       setSelectedEdges((current) => new Set([...current].filter((id) => visibleEdges.some((edge) => edge.id === id))));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [nodeMap, visibilityRootId, visibleEdges, visibleNodeIds]);
+  }, [focusRootId, nodeMap, visibleEdges, visibleNodeIds]);
 
   const beginNodeLongPress = (event: ReactPointerEvent<SVGGElement>, nodeId: string) => {
     if (event.pointerType !== "touch") return;
@@ -1081,20 +1081,13 @@ export default function GraphEditor() {
   };
 
   const toggleNodeExpansion = (nodeId: string) => {
-    if (!visibilityRootId) {
-      setVisibilityRootId(nodeId);
-      setExpandedNodes(new Set());
-      setPinnedVisibleNodes(new Set());
-      setStatus("Conexões contraídas");
-      return;
-    }
-    const wasExpanded = expandedNodes.has(nodeId);
-    setExpandedNodes((current) => {
+    const wasCollapsed = collapsedNodes.has(nodeId);
+    setCollapsedNodes((current) => {
       const next = new Set(current);
       if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
       return next;
     });
-    setStatus(wasExpanded ? "Ramo oculto" : "Conexões expandidas");
+    setStatus(wasCollapsed ? "Filhos expandidos" : "Filhos contraídos");
   };
 
   const fitNodes = (nodes: GraphNode[]) => {
@@ -1130,8 +1123,12 @@ export default function GraphEditor() {
     const orphanIds = graphRef.current.nodes
       .filter((candidate) => connectedNodeIds(graphRef.current, candidate.id).size === 0)
       .map((candidate) => candidate.id);
-    setVisibilityRootId(nodeId);
-    setExpandedNodes(new Set([nodeId]));
+    setFocusRootId(nodeId);
+    setCollapsedNodes(new Set(
+      graphRef.current.nodes
+        .filter((candidate) => candidate.id !== nodeId)
+        .map((candidate) => candidate.id),
+    ));
     setPinnedVisibleNodes(new Set(orphanIds));
     setSelectedNodes(new Set([nodeId]));
     setSelectedEdges(new Set());
@@ -1153,8 +1150,8 @@ export default function GraphEditor() {
     cancelLongPress();
     closeNodeContextMenu();
     const next = layoutGraph(graphRef.current);
-    setVisibilityRootId(null);
-    setExpandedNodes(new Set());
+    setFocusRootId(null);
+    setCollapsedNodes(new Set());
     setPinnedVisibleNodes(new Set());
     setConnectMode(false);
     setConnectSource(null);
@@ -1229,8 +1226,8 @@ export default function GraphEditor() {
       commitGraph(normalizeGraph(JSON.parse(raw)));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
-      setVisibilityRootId(null);
-      setExpandedNodes(new Set());
+      setFocusRootId(null);
+      setCollapsedNodes(new Set());
       setPinnedVisibleNodes(new Set());
       setStatus("Importado com sucesso");
       setImportError("");
@@ -1600,7 +1597,7 @@ export default function GraphEditor() {
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
                   const connectionCount = connectedNodeIds(graph, node.id).size;
-                  const expanded = visibilityRootId ? expandedNodes.has(node.id) : true;
+                  const expanded = !collapsedNodes.has(node.id);
                   return (
                     <g
                       key={node.id}

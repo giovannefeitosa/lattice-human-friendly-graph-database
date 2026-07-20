@@ -60,32 +60,72 @@ export function connectedNodeIds(graph: GraphData, nodeId: string): Set<string> 
   return connected;
 }
 
+/** Returns only outgoing neighbours: the direct children in the hierarchy. */
+export function childNodeIds(graph: GraphData, nodeId: string): Set<string> {
+  return new Set(
+    graph.edges
+      .filter((edge) => edge.source === nodeId)
+      .map((edge) => edge.target),
+  );
+}
+
+function hierarchyRootNodeIds(graph: GraphData): string[] {
+  const incomingCount = new Map(graph.nodes.map((node) => [node.id, 0]));
+  for (const edge of graph.edges) {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+  }
+
+  const roots = graph.nodes
+    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .map((node) => node.id)
+    .sort();
+  const covered = new Set<string>();
+  const markBranch = (rootId: string) => {
+    const queue = [rootId];
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const nodeId = queue[cursor];
+      if (covered.has(nodeId)) continue;
+      covered.add(nodeId);
+      queue.push(...childNodeIds(graph, nodeId));
+    }
+  };
+  roots.forEach(markBranch);
+
+  // Pure cycles have no natural source; a stable representative keeps them visible.
+  for (const node of [...graph.nodes].sort((left, right) => left.id.localeCompare(right.id))) {
+    if (covered.has(node.id)) continue;
+    roots.push(node.id);
+    markBranch(node.id);
+  }
+  return roots;
+}
+
 /**
- * Computes progressive visibility. A node reveals all neighbours only while it
- * is expanded; incoming and outgoing relations behave identically.
+ * Computes hierarchical visibility. Collapsing a node stops traversal through
+ * its outgoing edges without affecting parents or unrelated branches.
  */
-export function getProgressiveVisibleNodeIds(
+export function getHierarchicalVisibleNodeIds(
   graph: GraphData,
   rootId: string | null,
-  expandedNodeIds: ReadonlySet<string>,
+  collapsedNodeIds: ReadonlySet<string>,
   pinnedNodeIds: ReadonlySet<string> = new Set(),
 ): Set<string> {
-  if (!rootId) return new Set(graph.nodes.map((node) => node.id));
-  if (!graph.nodes.some((node) => node.id === rootId)) return new Set();
+  if (rootId && !graph.nodes.some((node) => node.id === rootId)) return new Set();
 
   const graphNodeIds = new Set(graph.nodes.map((node) => node.id));
-  const visible = new Set([
-    rootId,
+  const roots = [
+    ...(rootId ? [rootId] : hierarchyRootNodeIds(graph)),
     ...[...pinnedNodeIds].filter((nodeId) => graphNodeIds.has(nodeId)),
-  ]);
-  const queue = [rootId];
+  ];
+  const visible = new Set<string>();
+  const queue = [...roots];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const nodeId = queue[cursor];
-    if (!expandedNodeIds.has(nodeId)) continue;
-    for (const connectedId of connectedNodeIds(graph, nodeId)) {
-      if (visible.has(connectedId)) continue;
-      visible.add(connectedId);
-      queue.push(connectedId);
+    if (visible.has(nodeId) || !graphNodeIds.has(nodeId)) continue;
+    visible.add(nodeId);
+    if (collapsedNodeIds.has(nodeId)) continue;
+    for (const childId of childNodeIds(graph, nodeId)) {
+      queue.push(childId);
     }
   }
   return visible;

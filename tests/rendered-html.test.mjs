@@ -82,7 +82,9 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(editor, /transfer-dialog[\s\S]*Importar[\s\S]*Exportar JSON[\s\S]*Exportar Cypher/);
   assert.doesNotMatch(editor, /id="delete-selection"/);
   assert.match(editor, /\{connectionCount > 0 && <g/);
-  assert.match(editor, /setExpandedNodes\(new Set\(\[nodeId\]\)\)/);
+  assert.match(editor, /getHierarchicalVisibleNodeIds/);
+  assert.match(editor, /const expanded = !collapsedNodes\.has\(node\.id\)/);
+  assert.match(editor, /Filhos contraídos/);
   assert.match(editor, /connectedNodeIds\(graphRef\.current, candidate\.id\)\.size === 0/);
   assert.doesNotMatch(editor, /progressiveRootId/);
   assert.match(editor, /onContextMenu/);

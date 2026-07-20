@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const {
+  childNodeIds,
   connectedNodeIds,
-  getProgressiveVisibleNodeIds,
+  getHierarchicalVisibleNodeIds,
   layoutGraph,
 } = await import("../lib/graph-layout.ts");
 
@@ -30,34 +31,48 @@ const graph = {
 
 test("finds neighbours in both relation directions", () => {
   assert.deepEqual([...connectedNodeIds(graph, "b")].sort(), ["a", "c"]);
+  assert.deepEqual([...childNodeIds(graph, "b")], []);
+  assert.deepEqual([...childNodeIds(graph, "c")].sort(), ["b", "d"]);
 });
 
-test("reveals progressively through expanded nodes in both directions", () => {
-  assert.deepEqual([...getProgressiveVisibleNodeIds(graph, "b", new Set())], ["b"]);
+test("expands only outgoing children and keeps parents out of focused branches", () => {
+  assert.deepEqual([...getHierarchicalVisibleNodeIds(graph, "b", new Set())], ["b"]);
   assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(graph, "b", new Set(["b"]))].sort(),
+    [...getHierarchicalVisibleNodeIds(graph, "c", new Set())].sort(),
+    ["b", "c", "d"],
+  );
+  assert.deepEqual(
+    [...getHierarchicalVisibleNodeIds(graph, "c", new Set(["c"]))],
+    ["c"],
+  );
+  assert.deepEqual([...getHierarchicalVisibleNodeIds(graph, "missing", new Set())], []);
+});
+
+test("collapsing a branch preserves parents and children reachable through another parent", () => {
+  assert.deepEqual(
+    [...getHierarchicalVisibleNodeIds(graph, null, new Set())].sort(),
+    ["a", "b", "c", "d"],
+  );
+  assert.deepEqual(
+    [...getHierarchicalVisibleNodeIds(graph, null, new Set(["c"]))].sort(),
     ["a", "b", "c"],
   );
-  assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(graph, "b", new Set(["b", "c"]))].sort(),
-    ["a", "b", "c", "d"],
-  );
-  assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(graph, null, new Set())].sort(),
-    ["a", "b", "c", "d"],
-  );
-  assert.deepEqual([...getProgressiveVisibleNodeIds(graph, "missing", new Set())], []);
 });
 
 test("handles cycles and isolated roots without revealing unrelated nodes", () => {
   const cyclic = {
     ...graph,
     nodes: [...graph.nodes, node("isolated")],
-    edges: [...graph.edges, { id: "da", source: "d", target: "a", type: "RELATES_TO", properties: {} }],
+    edges: [
+      { id: "ab", source: "a", target: "b", type: "RELATES_TO", properties: {} },
+      { id: "bc", source: "b", target: "c", type: "RELATES_TO", properties: {} },
+      { id: "cd", source: "c", target: "d", type: "RELATES_TO", properties: {} },
+      { id: "da", source: "d", target: "a", type: "RELATES_TO", properties: {} },
+    ],
   };
-  assert.deepEqual([...getProgressiveVisibleNodeIds(cyclic, "isolated", new Set())], ["isolated"]);
+  assert.deepEqual([...getHierarchicalVisibleNodeIds(cyclic, "isolated", new Set())], ["isolated"]);
   assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(cyclic, "a", new Set(["a", "b", "c", "d"]))].sort(),
+    [...getHierarchicalVisibleNodeIds(cyclic, "a", new Set())].sort(),
     ["a", "b", "c", "d"],
   );
 });
@@ -68,11 +83,11 @@ test("keeps newly added nodes visible during progressive exploration", () => {
     nodes: [...graph.nodes, node("new")],
   };
   assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(withNewNode, "b", new Set(), new Set(["new"]))].sort(),
+    [...getHierarchicalVisibleNodeIds(withNewNode, "b", new Set(), new Set(["new"]))].sort(),
     ["b", "new"],
   );
   assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(withNewNode, "b", new Set(), new Set(["missing"]))],
+    [...getHierarchicalVisibleNodeIds(withNewNode, "b", new Set(), new Set(["missing"]))],
     ["b"],
   );
 });
@@ -83,8 +98,8 @@ test("shows the focused node, direct connections, and pinned orphan nodes", () =
     nodes: [...graph.nodes, node("orphan")],
   };
   assert.deepEqual(
-    [...getProgressiveVisibleNodeIds(withOrphan, "b", new Set(["b"]), new Set(["orphan"]))].sort(),
-    ["a", "b", "c", "orphan"],
+    [...getHierarchicalVisibleNodeIds(withOrphan, "c", new Set(["a", "b", "d", "orphan"]), new Set(["orphan"]))].sort(),
+    ["b", "c", "d", "orphan"],
   );
 });
 
