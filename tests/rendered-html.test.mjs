@@ -39,6 +39,11 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(categories, /removeCustomCategory/);
   assert.match(editor, /Copiar JSON/);
   assert.match(editor, /connection-port-hit/);
+  assert.match(editor, /partial\.categoryId \?\? graph\.nodes\.at\(-1\)\?\.categoryId/);
+  assert.match(editor, /const GRID_SIZE = 24/);
+  assert.match(editor, /label="Encaixar na grade"/);
+  assert.match(editor, /active=\{snapToGrid\}/);
+  assert.match(editor, /snapPointToGrid\(position\)/);
   assert.match(graph, /content\?: string/);
   assert.match(graph, /categories: NodeCategory\[\]/);
   assert.match(graph, /categoryId: string/);
@@ -61,6 +66,12 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(editor, /beginTouchGesture/);
   assert.match(editor, /pointDistance/);
   assert.match(editor, /<GraphInspector/);
+  assert.match(editor, /inspectorVisible = inspectorOpen && Boolean\(selectedNode \|\| selectedEdge\)/);
+  assert.match(editor, /\{inspectorVisible && <GraphInspector/);
+  assert.match(editor, /setInspectorOpen\(true\)[\s\S]*setNodeNameFocusId\(id\)/);
+  assert.match(editor, /focusNodeName=\{selectedNode\?\.id === nodeNameFocusId\}/);
+  assert.match(inspector, /input\.focus\(\)[\s\S]*input\.select\(\)/);
+  assert.match(inspector, /focusOnMount=\{focusNodeName\}/);
   assert.match(editor, /Visualizar tudo/);
   assert.match(editor, /Explorar/);
   assert.match(editor, /onContextMenu/);

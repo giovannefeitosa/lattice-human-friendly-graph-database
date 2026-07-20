@@ -28,6 +28,7 @@ import GraphInspector from "./GraphInspector";
 import CategoryManager from "./CategoryManager";
 
 const NODE_RADIUS = 48;
+const GRID_SIZE = 24;
 
 type Point = { x: number; y: number };
 type Viewport = { x: number; y: number; zoom: number };
@@ -112,6 +113,13 @@ function pointDistance(a: Point, b: Point) {
 
 function pointMidpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function snapPointToGrid(point: Point): Point {
+  return {
+    x: Math.round(point.x / GRID_SIZE) * GRID_SIZE,
+    y: Math.round(point.y / GRID_SIZE) * GRID_SIZE,
+  };
 }
 
 function graphWithTimestamp(graph: GraphData): GraphData {
@@ -215,8 +223,10 @@ export default function GraphEditor() {
   const [connectSource, setConnectSource] = useState<string | null>(null);
   const [connectMode, setConnectMode] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("edit");
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [status, setStatus] = useState("Salvo");
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [nodeNameFocusId, setNodeNameFocusId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
   const [progressiveRootId, setProgressiveRootId] = useState<string | null>(null);
@@ -541,22 +551,27 @@ export default function GraphEditor() {
   const createNode = useCallback(
     (position?: Point, partial: Partial<GraphNode> = {}) => {
       const id = partial.id || uid("node");
-      const category = partial.categoryId
-        ? graphRef.current.categories.find((item) => item.id === partial.categoryId)
-        : graphRef.current.categories[0];
+      const graph = graphRef.current;
+      const categoryId = partial.categoryId ?? graph.nodes.at(-1)?.categoryId;
+      const category = categoryId
+        ? graph.categories.find((item) => item.id === categoryId)
+        : graph.categories[0];
       if (!category) throw new Error("Crie uma categoria antes de adicionar um nó.");
       const nextPosition = position || {
         x: (svgRef.current?.clientWidth || 900) / 2 / viewport.zoom - viewport.x,
         y: (svgRef.current?.clientHeight || 600) / 2 / viewport.zoom - viewport.y,
       };
+      const resolvedPosition = snapToGrid
+        ? snapPointToGrid({ x: partial.x ?? nextPosition.x, y: partial.y ?? nextPosition.y })
+        : { x: partial.x ?? nextPosition.x, y: partial.y ?? nextPosition.y };
       const node = {
         id,
         label: partial.label || "Novo conceito",
         categoryId: category.id,
         type: category.name,
         content: partial.content || "",
-        x: partial.x ?? nextPosition.x,
-        y: partial.y ?? nextPosition.y,
+        x: resolvedPosition.x,
+        y: resolvedPosition.y,
         z: partial.z ?? 0,
         color: category.color,
         properties: asProperties(partial.properties),
@@ -567,9 +582,11 @@ export default function GraphEditor() {
       }
       setSelectedNodes(new Set([id]));
       setSelectedEdges(new Set());
+      setInspectorOpen(true);
+      setNodeNameFocusId(id);
       return id;
     },
-    [commitGraph, progressiveRootId, viewport],
+    [commitGraph, progressiveRootId, snapToGrid, viewport],
   );
 
   const createEdge = useCallback(
@@ -664,6 +681,7 @@ export default function GraphEditor() {
     selectedEdges.size === 1
       ? graph.edges.find((edge) => edge.id === [...selectedEdges][0]) || null
       : null;
+  const inspectorVisible = inspectorOpen && Boolean(selectedNode || selectedEdge);
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number): Point => {
@@ -872,7 +890,10 @@ export default function GraphEditor() {
       ...current,
       nodes: current.nodes.map((node) => {
         const origin = drag.positions[node.id];
-        return origin ? { ...node, x: origin.x + dx, y: origin.y + dy } : node;
+        if (!origin) return node;
+        const position = { x: origin.x + dx, y: origin.y + dy };
+        const nextPosition = snapToGrid ? snapPointToGrid(position) : position;
+        return { ...node, x: nextPosition.x, y: nextPosition.y };
       }),
     }));
   };
@@ -1397,6 +1418,14 @@ export default function GraphEditor() {
           <IconToolButton id="categories" icon="▦" label="Categorias" description="Gerenciar categorias e propriedades" onClick={openCategoriesFromEditor} />
           <IconToolButton id="connect" icon="↗" label="Conectar" description="Escolher a origem e o destino" onClick={startConnecting} disabled={canvasMode === "view"} active={connectMode} />
           <IconToolButton id="delete-selection" icon="⌫" label="Excluir" description="Remover os elementos selecionados" onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} />
+          <IconToolButton
+            id="snap-to-grid"
+            icon="⌗"
+            label="Encaixar na grade"
+            description={snapToGrid ? "Desativar alinhamento de criação e movimento" : "Ativar alinhamento de criação e movimento"}
+            onClick={() => setSnapToGrid((enabled) => !enabled)}
+            active={snapToGrid}
+          />
           <span className="divider" />
           <IconToolButton id="fit" icon="⊙" label="Enquadrar" description="Centralizar os nós visíveis" onClick={fitGraph} />
           <IconToolButton id="show-all" icon="◎" label="Visualizar tudo" description="Revelar, reorganizar e enquadrar" onClick={showAllNodesAndLayout} />
@@ -1408,7 +1437,7 @@ export default function GraphEditor() {
         <div className="top-actions">
           <span className="save-state" role="status" aria-live="polite"><i />{status}</span>
           <IconToolButton id="help" icon="?" label="Atalhos" description="Mostrar comandos rápidos" onClick={() => setHelpOpen((open) => !open)} active={helpOpen} />
-          <IconToolButton id="inspector" icon="◫" label="Inspetor" description={inspectorOpen ? "Ocultar painel de propriedades" : "Mostrar painel de propriedades"} onClick={() => setInspectorOpen((open) => !open)} active={inspectorOpen} />
+          <IconToolButton id="inspector" icon="◫" label="Inspetor" description={inspectorVisible ? "Ocultar painel de propriedades" : "Mostrar painel de propriedades"} onClick={() => setInspectorOpen((open) => !open)} active={inspectorVisible} disabled={!selectedNode && !selectedEdge} />
         </div>
       </header>
 
@@ -1639,7 +1668,7 @@ export default function GraphEditor() {
           </div>
         </div>
 
-        {inspectorOpen && <GraphInspector
+        {inspectorVisible && <GraphInspector
           graph={graph}
           selectedNode={selectedNode}
           selectedEdge={selectedEdge}
@@ -1647,6 +1676,8 @@ export default function GraphEditor() {
           onDelete={deleteSelection}
           onClose={() => setInspectorOpen(false)}
           onManageCategories={openCategoriesFromEditor}
+          focusNodeName={selectedNode?.id === nodeNameFocusId}
+          onNodeNameFocused={() => setNodeNameFocusId(null)}
         />}
       </section>
 

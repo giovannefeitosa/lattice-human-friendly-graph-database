@@ -12,22 +12,36 @@ type Props = {
   onDelete: () => void;
   onClose: () => void;
   onManageCategories: () => void;
+  focusNodeName?: boolean;
+  onNodeNameFocused?: () => void;
 };
 
 type CommittedTextInputProps = {
   value: string;
   onCommit: (value: string) => void;
   normalize?: (value: string) => string;
+  focusOnMount?: boolean;
+  onFocused?: () => void;
 };
 
-function CommittedTextInput({ value, onCommit, normalize }: CommittedTextInputProps) {
+function CommittedTextInput({ value, onCommit, normalize, focusOnMount = false, onFocused }: CommittedTextInputProps) {
   const [draft, setDraft] = useState(value);
   const [invalid, setInvalid] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDraft(value), 0);
     return () => window.clearTimeout(timer);
   }, [value]);
+
+  useEffect(() => {
+    if (!focusOnMount) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+    onFocused?.();
+  }, [focusOnMount, onFocused]);
 
   const commit = () => {
     const next = normalize ? normalize(draft) : draft.trim();
@@ -41,7 +55,7 @@ function CommittedTextInput({ value, onCommit, normalize }: CommittedTextInputPr
     if (next !== value) onCommit(next);
   };
 
-  return <input aria-invalid={invalid} value={draft} onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit} onKeyDown={(event) => {
+  return <input ref={inputRef} aria-invalid={invalid} value={draft} onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit} onKeyDown={(event) => {
     if (event.key === "Enter") event.currentTarget.blur();
     if (event.key === "Escape") { setDraft(value); setInvalid(false); event.currentTarget.blur(); }
   }} />;
@@ -78,7 +92,7 @@ function TypedFieldInput({ field, value, onChange }: { field: CategoryField; val
   return <input value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || undefined)} />;
 }
 
-export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories }: Props) {
+export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, focusNodeName = false, onNodeNameFocused }: Props) {
   const [propertyError, setPropertyError] = useState("");
   const propertyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -138,7 +152,7 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
     {!selectedNode && !selectedEdge && <div className="empty-inspector"><span>◇</span><strong>Selecione um elemento</strong><p>Clique em um nó ou conexão para editar seus dados.</p></div>}
     {selectedNode && <div className="form-stack" key={selectedNode.id}>
       <div className="entity-preview"><i style={{ background: selectedNode.color }} /><div><strong>{selectedNode.label}</strong><small>{selectedNode.id}</small></div></div>
-      <label>Nome<CommittedTextInput value={selectedNode.label} onCommit={(label) => updateSelectedNode({ label })} /></label>
+      <label>Nome<CommittedTextInput value={selectedNode.label} focusOnMount={focusNodeName} onFocused={onNodeNameFocused} onCommit={(label) => updateSelectedNode({ label })} /></label>
       <label>Categoria<select value={selectedNode.categoryId} onChange={(event) => selectNodeCategory(event.target.value)}>{graph.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <button className="category-add inspector-icon-action" onClick={onManageCategories} aria-label="Gerenciar categorias" aria-describedby="tooltip-manage-categories">
         <span aria-hidden="true">▦</span>
