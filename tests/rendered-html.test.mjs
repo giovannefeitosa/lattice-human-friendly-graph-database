@@ -24,6 +24,9 @@ test("includes the requested editor and category capabilities", async () => {
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
   ]);
   assert.match(editor, /<dialog[\s\S]*Exportar/);
+  assert.match(editor, /navigator\.clipboard\.readText/);
+  assert.match(editor, /Colar da área de transferência/);
+  assert.match(editor, /Selecionar arquivo/);
   assert.doesNotMatch(editor, /anchor\.download|URL\.createObjectURL/);
   assert.match(inspector, /<label>Content<textarea/);
   assert.match(editor, /CommittedTextInput/);

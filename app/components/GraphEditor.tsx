@@ -164,6 +164,7 @@ export default function GraphEditor() {
   const [graphId, setGraphId] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
+  const [importError, setImportError] = useState("");
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [viewport, setViewport] = useState<Viewport>({ x: 360, y: 300, zoom: 1 });
@@ -183,6 +184,7 @@ export default function GraphEditor() {
   const contextMenuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const importDialogRef = useRef<HTMLDialogElement>(null);
   const invalidGraphDialogRef = useRef<HTMLDialogElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
@@ -1024,26 +1026,44 @@ export default function GraphEditor() {
     void returnToLibrary();
   };
 
-  const importGraph = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    let raw = "";
+  const importGraphText = (raw: string) => {
     try {
-      raw = await file.text();
       commitGraph(normalizeGraph(JSON.parse(raw)));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
       setProgressiveRootId(null);
       setExpandedNodes(new Set());
       setStatus("Importado com sucesso");
+      setImportError("");
+      importDialogRef.current?.close();
     } catch (error) {
+      importDialogRef.current?.close();
       setInvalidGraph({
         title: "JSON incompatível",
         message: error instanceof Error ? error.message : "O JSON não segue o schema v3.",
         raw,
       });
       setStatus("Não foi possível importar o JSON");
+    }
+  };
+
+  const importGraph = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    importGraphText(await file.text());
+  };
+
+  const importFromClipboard = async () => {
+    try {
+      const raw = await navigator.clipboard.readText();
+      if (!raw.trim()) {
+        setImportError("A área de transferência está vazia.");
+        return;
+      }
+      importGraphText(raw);
+    } catch {
+      setImportError("Não foi possível ler a área de transferência. Autorize o acesso e tente novamente.");
     }
   };
 
@@ -1113,7 +1133,7 @@ export default function GraphEditor() {
           <span className="divider" />
           <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
           <button onClick={showAllNodesAndLayout} title="Revelar, reorganizar e enquadrar todos os nós">◎ Visualizar tudo</button>
-          <button onClick={() => fileRef.current?.click()} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
+          <button onClick={() => { setImportError(""); importDialogRef.current?.showModal(); }} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
           <button onClick={exportJson} title="Exportar JSON">↓ JSON</button>
           <button className="primary" onClick={exportCypher} title="Exportar consultas Cypher">↓ Cypher</button>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
@@ -1374,6 +1394,18 @@ export default function GraphEditor() {
           onManageCategories={openCategoriesFromEditor}
         />}
       </section>
+
+      <dialog ref={importDialogRef} className="dialog import-dialog" aria-labelledby="import-dialog-title">
+        <div className="dialog-header">
+          <div><small>IMPORTAR GRAFO</small><h2 className="dialog-title" id="import-dialog-title">Escolha a origem</h2></div>
+          <button className="icon-button" onClick={() => importDialogRef.current?.close()} aria-label="Fechar">×</button>
+        </div>
+        <div className="dialog-body import-options">
+          <button onClick={() => fileRef.current?.click()}><span>⇧</span><strong>Selecionar arquivo</strong><small>Escolha um arquivo .json</small></button>
+          <button onClick={() => void importFromClipboard()}><span>▣</span><strong>Colar da área de transferência</strong><small>Importe o texto JSON copiado</small></button>
+          {importError && <p className="error" role="alert">{importError}</p>}
+        </div>
+      </dialog>
 
       <dialog ref={exportDialogRef} className="dialog export-dialog" aria-labelledby="export-dialog-title" onClose={() => setExportPreview(null)}>
         <div className="dialog-header">
