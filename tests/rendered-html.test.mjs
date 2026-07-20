@@ -74,6 +74,13 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(inspector, /focusOnMount=\{focusNodeName\}/);
   assert.match(editor, /Visualizar tudo/);
   assert.match(editor, /Explorar/);
+  assert.match(editor, /id="transfer"[\s\S]*label="Importar\/Exportar"/);
+  assert.match(editor, /transfer-dialog[\s\S]*Importar[\s\S]*Exportar JSON[\s\S]*Exportar Cypher/);
+  assert.doesNotMatch(editor, /id="delete-selection"/);
+  assert.match(editor, /\{connectionCount > 0 && <g/);
+  assert.match(editor, /setExpandedNodes\(new Set\(\[nodeId\]\)\)/);
+  assert.match(editor, /connectedNodeIds\(graphRef\.current, candidate\.id\)\.size === 0/);
+  assert.doesNotMatch(editor, /progressiveRootId/);
   assert.match(editor, /onContextMenu/);
   assert.match(inspector, /Inspector de propriedades/);
   assert.doesNotMatch(inspector, /onExplore|explore-button/);

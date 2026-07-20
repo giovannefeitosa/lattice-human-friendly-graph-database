@@ -229,15 +229,16 @@ export default function GraphEditor() {
   const [nodeNameFocusId, setNodeNameFocusId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileHintOpen, setMobileHintOpen] = useState(true);
-  const [progressiveRootId, setProgressiveRootId] = useState<string | null>(null);
+  const [visibilityRootId, setVisibilityRootId] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [explorationAddedNodes, setExplorationAddedNodes] = useState<Set<string>>(new Set());
+  const [pinnedVisibleNodes, setPinnedVisibleNodes] = useState<Set<string>>(new Set());
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const contextMenuButtonRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const transferDialogRef = useRef<HTMLDialogElement>(null);
   const exportDialogRef = useRef<HTMLDialogElement>(null);
   const importDialogRef = useRef<HTMLDialogElement>(null);
   const importTextRef = useRef<HTMLTextAreaElement>(null);
@@ -370,9 +371,9 @@ export default function GraphEditor() {
       setGraphId(payload.graph.id);
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
-      setProgressiveRootId(null);
+      setVisibilityRootId(null);
       setExpandedNodes(new Set());
-      setExplorationAddedNodes(new Set());
+      setPinnedVisibleNodes(new Set());
       setViewport({ x: 360, y: 300, zoom: 1 });
       setStatus("Salvo");
       setScreen(target);
@@ -577,8 +578,8 @@ export default function GraphEditor() {
         properties: asProperties(partial.properties),
       } as GraphNode;
       commitGraph((current) => ({ ...current, nodes: [...current.nodes, node] }));
-      if (progressiveRootId) {
-        setExplorationAddedNodes((current) => new Set(current).add(id));
+      if (visibilityRootId) {
+        setPinnedVisibleNodes((current) => new Set(current).add(id));
       }
       setSelectedNodes(new Set([id]));
       setSelectedEdges(new Set());
@@ -586,7 +587,7 @@ export default function GraphEditor() {
       setNodeNameFocusId(id);
       return id;
     },
-    [commitGraph, progressiveRootId, snapToGrid, viewport],
+    [commitGraph, snapToGrid, viewport, visibilityRootId],
   );
 
   const createEdge = useCallback(
@@ -610,9 +611,9 @@ export default function GraphEditor() {
     setSelectedEdges(new Set());
     setConnectSource(null);
     setConnectMode(false);
-    setProgressiveRootId(null);
+    setVisibilityRootId(null);
     setExpandedNodes(new Set());
-    setExplorationAddedNodes(new Set());
+    setPinnedVisibleNodes(new Set());
   }, [commitGraph]);
 
   useEffect(() => {
@@ -694,8 +695,8 @@ export default function GraphEditor() {
     [viewport],
   );
   const visibleNodeIds = useMemo(
-    () => getProgressiveVisibleNodeIds(graph, progressiveRootId, expandedNodes, explorationAddedNodes),
-    [expandedNodes, explorationAddedNodes, graph, progressiveRootId],
+    () => getProgressiveVisibleNodeIds(graph, visibilityRootId, expandedNodes, pinnedVisibleNodes),
+    [expandedNodes, graph, pinnedVisibleNodes, visibilityRootId],
   );
   const visibleNodes = useMemo(
     () => graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
@@ -709,17 +710,17 @@ export default function GraphEditor() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (progressiveRootId && !nodeMap.has(progressiveRootId)) {
-        setProgressiveRootId(null);
+      if (visibilityRootId && !nodeMap.has(visibilityRootId)) {
+        setVisibilityRootId(null);
         setExpandedNodes(new Set());
-        setExplorationAddedNodes(new Set());
+        setPinnedVisibleNodes(new Set());
         return;
       }
       setSelectedNodes((current) => new Set([...current].filter((id) => visibleNodeIds.has(id))));
       setSelectedEdges((current) => new Set([...current].filter((id) => visibleEdges.some((edge) => edge.id === id))));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [nodeMap, progressiveRootId, visibleEdges, visibleNodeIds]);
+  }, [nodeMap, visibilityRootId, visibleEdges, visibleNodeIds]);
 
   const beginNodeLongPress = (event: ReactPointerEvent<SVGGElement>, nodeId: string) => {
     if (event.pointerType !== "touch") return;
@@ -1053,7 +1054,13 @@ export default function GraphEditor() {
   };
 
   const toggleNodeExpansion = (nodeId: string) => {
-    if (!progressiveRootId) return;
+    if (!visibilityRootId) {
+      setVisibilityRootId(nodeId);
+      setExpandedNodes(new Set());
+      setPinnedVisibleNodes(new Set());
+      setStatus("Conexões contraídas");
+      return;
+    }
     const wasExpanded = expandedNodes.has(nodeId);
     setExpandedNodes((current) => {
       const next = new Set(current);
@@ -1088,20 +1095,23 @@ export default function GraphEditor() {
 
   const fitGraph = () => fitNodes(visibleNodes);
 
-  const startProgressiveExploration = (nodeId: string) => {
+  const focusNodeAndConnections = (nodeId: string) => {
     const node = graphRef.current.nodes.find((candidate) => candidate.id === nodeId);
     if (!node) return;
     cancelLongPress();
     closeNodeContextMenu();
-    setProgressiveRootId(nodeId);
-    setExpandedNodes(new Set());
-    setExplorationAddedNodes(new Set());
+    const orphanIds = graphRef.current.nodes
+      .filter((candidate) => connectedNodeIds(graphRef.current, candidate.id).size === 0)
+      .map((candidate) => candidate.id);
+    setVisibilityRootId(nodeId);
+    setExpandedNodes(new Set([nodeId]));
+    setPinnedVisibleNodes(new Set(orphanIds));
     setSelectedNodes(new Set([nodeId]));
     setSelectedEdges(new Set());
     setConnectMode(false);
     setConnectSource(null);
     setHelpOpen(false);
-    setStatus("Explorando a partir deste nó");
+    setStatus("Nó e conexões diretas visíveis");
     const canvas = svgRef.current;
     if (canvas) {
       setViewport((current) => ({
@@ -1116,9 +1126,9 @@ export default function GraphEditor() {
     cancelLongPress();
     closeNodeContextMenu();
     const next = layoutGraph(graphRef.current);
-    setProgressiveRootId(null);
+    setVisibilityRootId(null);
     setExpandedNodes(new Set());
-    setExplorationAddedNodes(new Set());
+    setPinnedVisibleNodes(new Set());
     setConnectMode(false);
     setConnectSource(null);
     commitGraph(next);
@@ -1192,9 +1202,9 @@ export default function GraphEditor() {
       commitGraph(normalizeGraph(JSON.parse(raw)));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
-      setProgressiveRootId(null);
+      setVisibilityRootId(null);
       setExpandedNodes(new Set());
-      setExplorationAddedNodes(new Set());
+      setPinnedVisibleNodes(new Set());
       setStatus("Importado com sucesso");
       setImportError("");
       setImportDraft("");
@@ -1236,6 +1246,16 @@ export default function GraphEditor() {
     setImportError("");
     importDialogRef.current?.showModal();
     window.setTimeout(() => importTextRef.current?.focus(), 0);
+  };
+
+  const openImportFromTransferDialog = () => {
+    transferDialogRef.current?.close();
+    openImportDialog();
+  };
+
+  const exportFromTransferDialog = (format: ExportPreview["format"]) => {
+    transferDialogRef.current?.close();
+    if (format === "JSON") exportJson(); else exportCypher();
   };
 
   const invalidGraphModal = <dialog ref={invalidGraphDialogRef} className="dialog export-dialog invalid-graph-dialog" aria-labelledby="invalid-graph-title" onClose={() => setInvalidGraph(null)}>
@@ -1417,7 +1437,6 @@ export default function GraphEditor() {
           <IconToolButton id="new-node" icon="＋" label="Novo nó" description="Adicionar um nó ao centro da tela" onClick={() => createNode()} disabled={canvasMode === "view"} />
           <IconToolButton id="categories" icon="▦" label="Categorias" description="Gerenciar categorias e propriedades" onClick={openCategoriesFromEditor} />
           <IconToolButton id="connect" icon="↗" label="Conectar" description="Escolher a origem e o destino" onClick={startConnecting} disabled={canvasMode === "view"} active={connectMode} />
-          <IconToolButton id="delete-selection" icon="⌫" label="Excluir" description="Remover os elementos selecionados" onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} />
           <IconToolButton
             id="snap-to-grid"
             icon="⌗"
@@ -1429,9 +1448,7 @@ export default function GraphEditor() {
           <span className="divider" />
           <IconToolButton id="fit" icon="⊙" label="Enquadrar" description="Centralizar os nós visíveis" onClick={fitGraph} />
           <IconToolButton id="show-all" icon="◎" label="Visualizar tudo" description="Revelar, reorganizar e enquadrar" onClick={showAllNodesAndLayout} />
-          <IconToolButton id="import" icon="⇧" label="Importar" description="Carregar um grafo em JSON" onClick={openImportDialog} disabled={canvasMode === "view"} />
-          <IconToolButton id="export-json" icon="{ }" label="Exportar JSON" description="Baixar os dados completos do grafo" onClick={exportJson} />
-          <IconToolButton id="export-cypher" icon="Cy" label="Exportar Cypher" description="Gerar consultas para o Neo4j" onClick={exportCypher} primary />
+          <IconToolButton id="transfer" icon="⇅" label="Importar/Exportar" description="Importar JSON ou exportar o grafo" onClick={() => transferDialogRef.current?.showModal()} primary />
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
         </nav>
         <div className="top-actions">
@@ -1558,7 +1575,7 @@ export default function GraphEditor() {
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
                   const connectionCount = connectedNodeIds(graph, node.id).size;
-                  const expanded = progressiveRootId ? expandedNodes.has(node.id) : true;
+                  const expanded = visibilityRootId ? expandedNodes.has(node.id) : true;
                   return (
                     <g
                       key={node.id}
@@ -1592,7 +1609,7 @@ export default function GraphEditor() {
                       <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
                       <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                       <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
-                      {progressiveRootId && connectionCount > 0 && <g
+                      {connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
                         transform="translate(38 -38)"
                         role="button"
@@ -1629,7 +1646,7 @@ export default function GraphEditor() {
                 ref={contextMenuButtonRef}
                 type="button"
                 role="menuitem"
-                onClick={() => startProgressiveExploration(nodeContextMenu.nodeId)}
+                onClick={() => focusNodeAndConnections(nodeContextMenu.nodeId)}
               >◎ Explorar</button>
             </div>
           )}
@@ -1680,6 +1697,18 @@ export default function GraphEditor() {
           onNodeNameFocused={() => setNodeNameFocusId(null)}
         />}
       </section>
+
+      <dialog ref={transferDialogRef} className="dialog transfer-dialog" aria-labelledby="transfer-dialog-title">
+        <div className="dialog-header">
+          <div><small>INTERCÂMBIO</small><h2 className="dialog-title" id="transfer-dialog-title">Importar ou exportar</h2></div>
+          <button className="icon-button" onClick={() => transferDialogRef.current?.close()} aria-label="Fechar">×</button>
+        </div>
+        <div className="dialog-body transfer-options">
+          <button onClick={openImportFromTransferDialog} disabled={canvasMode === "view"}><span>⇧</span><strong>Importar</strong><small>Carregar um grafo em JSON</small></button>
+          <button onClick={() => exportFromTransferDialog("JSON")}><span>{"{ }"}</span><strong>Exportar JSON</strong><small>Gerar os dados completos do grafo</small></button>
+          <button onClick={() => exportFromTransferDialog("Cypher")}><span>Cy</span><strong>Exportar Cypher</strong><small>Gerar consultas para o Neo4j</small></button>
+        </div>
+      </dialog>
 
       <dialog ref={importDialogRef} className="dialog import-dialog" aria-labelledby="import-dialog-title">
         <div className="dialog-header">

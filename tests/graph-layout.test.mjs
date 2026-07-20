@@ -77,6 +77,17 @@ test("keeps newly added nodes visible during progressive exploration", () => {
   );
 });
 
+test("shows the focused node, direct connections, and pinned orphan nodes", () => {
+  const withOrphan = {
+    ...graph,
+    nodes: [...graph.nodes, node("orphan")],
+  };
+  assert.deepEqual(
+    [...getProgressiveVisibleNodeIds(withOrphan, "b", new Set(["b"]), new Set(["orphan"]))].sort(),
+    ["a", "b", "c", "orphan"],
+  );
+});
+
 test("produces deterministic finite positions without mutating the graph", () => {
   const original = structuredClone(graph);
   const first = layoutGraph(graph, { iterations: 180 });

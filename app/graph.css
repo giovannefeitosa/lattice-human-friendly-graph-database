@@ -2873,6 +2873,12 @@ pre.export-code {
 .invalid-graph-message { margin:0;color:#ff9bb0;font-size:11px }
 .invalid-graph-dialog .export-code { max-height:50vh;user-select:text }
 .import-dialog { width:min(520px,calc(100% - 28px)) }
+.transfer-dialog { width:min(640px,calc(100% - 28px)) }
+.transfer-options { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px }
+.transfer-options>button { display:flex;min-height:148px;align-items:center;justify-content:center;flex-direction:column;gap:8px;border-style:dashed;text-align:center }
+.transfer-options>button span { color:#a98cff;font:750 22px var(--font-geist-mono),ui-monospace,monospace }
+.transfer-options>button strong { color:#eef1ff;font-size:12px }
+.transfer-options>button small { max-width:150px;color:#707b94;font-size:9px;line-height:1.45;white-space:normal }
 .import-options { display:grid;grid-template-columns:1fr 1fr;gap:12px }
 .import-options>button { display:flex;min-height:130px;align-items:center;justify-content:center;flex-direction:column;gap:7px;border-style:dashed;text-align:center }
 .import-options>button span { color:#a98cff;font-size:25px }
@@ -2896,6 +2902,8 @@ pre.export-code {
   .category-field-row,.new-field-form { grid-template-columns:minmax(0,1fr) 105px 36px }
   .new-field-form button { grid-column:1/-1 }
   .import-options { grid-template-columns:1fr }
+  .transfer-options { grid-template-columns:1fr }
+  .transfer-options>button { min-height:96px }
 }
 
 /* Compact desktop workspace: designed for narrow, docked browser windows. */
@@ -2948,11 +2956,9 @@ pre.export-code {
   line-height: 1;
 }
 
-.graph-shell .icon-tool[aria-label="Exportar JSON"] .icon-tool-glyph,
-.graph-shell .icon-tool[aria-label="Exportar Cypher"] .icon-tool-glyph {
+.graph-shell .icon-tool[aria-label="Importar/Exportar"] .icon-tool-glyph {
   font-family: var(--font-geist-mono), ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: -0.08em;
+  font-size: 16px;
 }
 
 .graph-shell .custom-tooltip {
