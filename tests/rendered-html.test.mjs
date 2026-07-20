@@ -69,3 +69,23 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(styles, /body[\s\S]*user-select: none/);
   assert.match(styles, /:where\(input, textarea, select/);
 });
+
+test("keeps graph creation, naming, categories, and back navigation explicit", async () => {
+  const [editor, categories, styles] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/CategoryManager.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(editor, /Criar novo grafo/);
+  assert.match(editor, /Categorias personalizadas/);
+  assert.match(editor, /Concept, Person e Event são categorias fixas/);
+  assert.match(editor, /graph-card-rename/);
+  assert.match(editor, /Voltar para Biblioteca[\s\S]*← <span>Biblioteca<\/span>/);
+  assert.match(editor, /aria-live="polite"/);
+  assert.match(editor, /backDestination=\{categoryReturnScreen === "editor" \? "Editor" : "Biblioteca"\}/);
+  assert.match(categories, /← \{backDestination\}/);
+  assert.match(categories, /Nome do grafo · Enter para salvar/);
+  assert.match(categories, /"FIXA" : "PERSONALIZADA"/);
+  assert.match(styles, /@media \(max-width: 1180px\)[\s\S]*\.graph-shell \.graph-name-input[\s\S]*display: block/);
+});

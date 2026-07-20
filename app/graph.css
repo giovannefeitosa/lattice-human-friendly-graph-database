@@ -3226,3 +3226,411 @@ pre.export-code {
     display: none;
   }
 }
+
+/* Responsive affordances for graph naming and library/category management. */
+.graph-shell .library-back {
+  display: inline-flex;
+  width: auto;
+  min-width: max-content;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  gap: 6px;
+  border-radius: 9px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.graph-shell .graph-name-input {
+  display: block;
+  width: clamp(92px, 12vw, 180px);
+  min-width: 72px;
+  flex: 0 1 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-shell .save-state {
+  display: flex;
+  min-width: 0;
+  max-width: 92px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-card-rename,
+.graph-card-categories {
+  position: absolute;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
+  border: 1px solid rgba(139, 108, 232, 0.28);
+  border-radius: 8px;
+  color: #b8a6f7;
+  background: rgba(25, 20, 50, 0.92);
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.graph-card-rename {
+  right: 104px;
+}
+
+.graph-card-categories {
+  right: 12px;
+}
+
+.graph-card-rename:hover,
+.graph-card-rename:focus-visible,
+.graph-card-categories:hover,
+.graph-card-categories:focus-visible {
+  border-color: rgba(174, 146, 255, 0.58);
+  color: #f1edff;
+  background: rgba(49, 38, 91, 0.96);
+}
+
+.graph-card-open > span {
+  min-width: 0;
+  padding-right: 17px;
+  padding-bottom: 54px;
+}
+
+.graph-card-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-card-actions .graph-card-rename,
+.graph-card-actions .graph-card-categories {
+  position: static;
+}
+
+.graph-create-dialog {
+  width: min(520px, calc(100% - 28px));
+  margin: auto;
+  padding: 0;
+  color: var(--graph-text);
+}
+
+.graph-library > dialog.dialog {
+  width: min(520px, calc(100% - 28px));
+  margin: auto;
+  padding: 0;
+  color: var(--graph-text);
+}
+
+.graph-library > dialog.dialog::backdrop {
+  background: rgba(1, 2, 7, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.graph-library .form-stack {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.graph-library .form-stack label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  color: #808aa3;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.graph-library .form-stack input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgba(140, 159, 224, 0.2);
+  border-radius: 10px;
+  outline: none;
+  color: #e7eaf7;
+  background: rgba(4, 7, 17, 0.7);
+  font: 500 11px/1.4 var(--font-geist-mono), ui-monospace, monospace;
+  text-transform: none;
+}
+
+.graph-library .form-stack input:focus {
+  border-color: rgba(109, 137, 241, 0.67);
+  box-shadow: 0 0 0 3px rgba(82, 110, 223, 0.11);
+}
+
+.graph-library .form-stack .category-add {
+  width: 100%;
+  border-style: dashed;
+}
+
+.graph-create-dialog::backdrop {
+  background: rgba(1, 2, 7, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.graph-create-dialog form,
+.graph-create-form {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.graph-create-dialog .dialog-body,
+.graph-create-dialog .modal-body {
+  display: grid;
+  gap: 14px;
+}
+
+.graph-create-dialog label,
+.graph-create-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  color: #808aa3;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.graph-create-dialog input,
+.graph-create-dialog select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgba(140, 159, 224, 0.2);
+  border-radius: 10px;
+  outline: none;
+  color: #e7eaf7;
+  background: rgba(4, 7, 17, 0.7);
+  text-transform: none;
+}
+
+.graph-create-dialog input:focus,
+.graph-create-dialog select:focus {
+  border-color: rgba(109, 137, 241, 0.67);
+  box-shadow: 0 0 0 3px rgba(82, 110, 223, 0.11);
+}
+
+.categories-back,
+.categories-topbar > button:first-child {
+  display: inline-flex;
+  width: auto;
+  min-width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 9px;
+  white-space: nowrap;
+}
+
+.categories-topbar .brand {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.categories-title input {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.categories-topbar .save-state {
+  display: flex;
+  min-width: 0;
+  max-width: 92px;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 7px;
+  gap: 7px;
+  color: #697390;
+  font-size: 10px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.categories-topbar .save-state i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--graph-green);
+  box-shadow: 0 0 10px rgba(98, 230, 167, 0.76);
+}
+
+.category-list em,
+.category-list .category-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 3px 5px;
+  border-radius: 5px;
+  color: #9b86e7;
+  background: rgba(116, 89, 206, 0.1);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .graph-shell .graph-name-input {
+    display: block;
+    width: clamp(84px, 12vw, 138px);
+    flex-basis: 138px;
+  }
+
+  .graph-shell .save-state {
+    display: flex;
+  }
+}
+
+@media (max-width: 800px) {
+  .graph-shell .graph-name-input {
+    width: clamp(74px, 15vw, 108px);
+    min-width: 68px;
+    flex-basis: 108px;
+    padding-inline: 7px;
+    font-size: 11px;
+  }
+
+  .graph-shell .toolbar {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+  }
+
+  .graph-shell .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .graph-shell .save-state {
+    max-width: 66px;
+    padding-inline: 4px;
+    gap: 4px;
+    font-size: 8px;
+  }
+
+  .categories-workspace {
+    grid-template-columns: 136px minmax(0, 1fr);
+  }
+
+  .categories-topbar .brand {
+    width: 34px;
+  }
+
+  .category-list > button {
+    min-width: 0;
+  }
+
+  .category-list > button > span small {
+    display: none;
+  }
+
+  .category-list em,
+  .category-list .category-badge {
+    display: inline-flex;
+  }
+
+  .categories-topbar .save-state {
+    display: flex;
+    max-width: 66px;
+    padding-inline: 4px;
+    gap: 4px;
+    font-size: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  .graph-card-open > span {
+    padding-right: 17px;
+    padding-bottom: 54px;
+  }
+
+  .graph-card-rename {
+    right: auto;
+    left: 12px;
+  }
+
+  .graph-card-actions {
+    right: 12px;
+    left: 12px;
+    justify-content: flex-end;
+  }
+
+  .graph-card-actions .graph-card-rename {
+    margin-right: auto;
+  }
+
+  .graph-create-dialog {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .graph-library > dialog.dialog {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .graph-create-dialog .dialog-footer,
+  .graph-create-dialog .modal-footer {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .graph-shell .graph-name-input {
+    width: 72px;
+    min-width: 64px;
+    flex-basis: 72px;
+  }
+
+  .graph-shell .save-state {
+    width: 38px;
+    max-width: 38px;
+    padding-inline: 2px;
+    font-size: 7px;
+  }
+
+  .categories-topbar {
+    padding-inline: 10px;
+    gap: 9px;
+  }
+
+  .categories-workspace {
+    grid-template-columns: 124px minmax(0, 1fr);
+  }
+
+  .categories-sidebar {
+    padding-inline: 7px;
+  }
+}

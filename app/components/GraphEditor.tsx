@@ -195,6 +195,15 @@ export default function GraphEditor() {
   const [categoryReturnScreen, setCategoryReturnScreen] = useState<"library" | "editor">("editor");
   const [graphs, setGraphs] = useState<GraphSummary[]>([]);
   const [libraryStatus, setLibraryStatus] = useState("Carregando grafos…");
+  const [libraryNotice, setLibraryNotice] = useState("");
+  const [createGraphName, setCreateGraphName] = useState("");
+  const [createCategoryNames, setCreateCategoryNames] = useState<string[]>([""]);
+  const [createGraphError, setCreateGraphError] = useState("");
+  const [creatingGraph, setCreatingGraph] = useState(false);
+  const [renameGraph, setRenameGraph] = useState<GraphSummary | null>(null);
+  const [renameGraphName, setRenameGraphName] = useState("");
+  const [renameGraphError, setRenameGraphError] = useState("");
+  const [renamingGraph, setRenamingGraph] = useState(false);
   const [graphId, setGraphId] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
@@ -223,6 +232,10 @@ export default function GraphEditor() {
   const importDialogRef = useRef<HTMLDialogElement>(null);
   const importTextRef = useRef<HTMLTextAreaElement>(null);
   const invalidGraphDialogRef = useRef<HTMLDialogElement>(null);
+  const createGraphDialogRef = useRef<HTMLDialogElement>(null);
+  const createGraphNameRef = useRef<HTMLInputElement>(null);
+  const renameGraphDialogRef = useRef<HTMLDialogElement>(null);
+  const renameGraphNameRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
   const panHoldIntervalRef = useRef<number | null>(null);
@@ -367,9 +380,49 @@ export default function GraphEditor() {
     }
   }, []);
 
+  const openCreateGraphDialog = useCallback(() => {
+    setLibraryNotice("");
+    setCreateGraphName("");
+    setCreateCategoryNames([""]);
+    setCreateGraphError("");
+    createGraphDialogRef.current?.showModal();
+    window.setTimeout(() => createGraphNameRef.current?.focus(), 0);
+  }, []);
+
   const createGraphRecord = useCallback(async () => {
-    const initial = normalizeGraph({ name: "Novo grafo", version: 3, categories: [], nodes: [], edges: [] });
+    const name = createGraphName.trim();
+    const categoryNames = createCategoryNames.map((item) => item.trim()).filter(Boolean);
+    if (!name) {
+      setCreateGraphError("Informe o nome do grafo.");
+      createGraphNameRef.current?.focus();
+      return;
+    }
+    const normalizedCategoryNames = categoryNames.map((item) => item.toLocaleLowerCase("pt-BR"));
+    if (new Set(normalizedCategoryNames).size !== normalizedCategoryNames.length) {
+      setCreateGraphError("Cada categoria precisa ter um nome diferente.");
+      return;
+    }
+    const categoryColors = ["#8ba6ff", "#ff8e8e", "#a78bfa", "#22d3ee", "#f472b6", "#84cc16"];
+    let initial: GraphData;
+    try {
+      initial = normalizeGraph({
+        name,
+        version: 3,
+        categories: categoryNames.map((categoryName, index) => ({
+          id: uid("category"),
+          name: categoryName,
+          color: categoryColors[index % categoryColors.length],
+          fields: [],
+        })),
+        nodes: [],
+        edges: [],
+      });
+    } catch (error) {
+      setCreateGraphError(error instanceof Error ? error.message : "Revise as categorias informadas.");
+      return;
+    }
     setLibraryStatus("Criando grafo…");
+    setCreatingGraph(true);
     try {
       const response = await fetch("/api/graphs", {
         method: "POST",
@@ -378,11 +431,60 @@ export default function GraphEditor() {
       });
       if (!response.ok) throw new Error();
       const payload = (await response.json()) as { graph: { id: string } };
+      createGraphDialogRef.current?.close();
       await openGraph(payload.graph.id);
+      setStatus("Grafo criado");
     } catch {
       setLibraryStatus("Não foi possível criar o grafo.");
+      setCreateGraphError("Não foi possível criar o grafo. Tente novamente.");
+    } finally {
+      setCreatingGraph(false);
     }
-  }, [openGraph]);
+  }, [createCategoryNames, createGraphName, openGraph]);
+
+  const openRenameGraphDialog = useCallback((item: GraphSummary) => {
+    setLibraryNotice("");
+    setRenameGraph(item);
+    setRenameGraphName(item.name);
+    setRenameGraphError("");
+    renameGraphDialogRef.current?.showModal();
+    window.setTimeout(() => {
+      renameGraphNameRef.current?.focus();
+      renameGraphNameRef.current?.select();
+    }, 0);
+  }, []);
+
+  const renameGraphRecord = useCallback(async () => {
+    if (!renameGraph) return;
+    const name = renameGraphName.trim();
+    if (!name) {
+      setRenameGraphError("Informe o novo nome.");
+      renameGraphNameRef.current?.focus();
+      return;
+    }
+    setRenamingGraph(true);
+    setRenameGraphError("");
+    try {
+      const graphResponse = await fetch(`/api/graphs?id=${encodeURIComponent(renameGraph.id)}`);
+      if (!graphResponse.ok) throw new Error();
+      const payload = (await graphResponse.json()) as { graph: { raw: string } };
+      const storedGraph = normalizeGraph({ ...(JSON.parse(payload.graph.raw) as GraphData), name });
+      const response = await fetch("/api/graphs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: renameGraph.id, name, graph: storedGraph }),
+      });
+      if (!response.ok) throw new Error();
+      renameGraphDialogRef.current?.close();
+      setRenameGraph(null);
+      await loadLibrary();
+      setLibraryNotice(`“${name}” foi renomeado.`);
+    } catch {
+      setRenameGraphError("Não foi possível renomear o grafo. Tente novamente.");
+    } finally {
+      setRenamingGraph(false);
+    }
+  }, [loadLibrary, renameGraph, renameGraphName]);
 
   const deleteGraphRecord = useCallback(async (item: GraphSummary) => {
     if (!window.confirm(`Excluir “${item.name}”?`)) return;
@@ -1129,14 +1231,15 @@ export default function GraphEditor() {
             <span className="brand-mark">L</span>
             <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
           </div>
-          <button className="primary" onClick={() => void createGraphRecord()}>＋ Novo grafo</button>
+          <button className="primary" onClick={openCreateGraphDialog}>＋ Novo grafo</button>
         </header>
         <section className="library-content">
           <div className="library-heading">
             <div><small>SEUS GRAFOS</small><h1>Biblioteca</h1></div>
             <span>{graphs.length} {graphs.length === 1 ? "grafo" : "grafos"}</span>
           </div>
-          {libraryStatus && <p className="library-status">{libraryStatus}</p>}
+          {libraryStatus && <p className="library-status" role="status" aria-live="polite">{libraryStatus}</p>}
+          {libraryNotice && <p className="library-status" role="status" aria-live="polite">{libraryNotice}</p>}
           <div className="graph-grid">
             {graphs.map((item) => (
               <article className="graph-card" key={item.id}>
@@ -1146,28 +1249,144 @@ export default function GraphEditor() {
                   <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                   <span><strong>{item.name}</strong><small>Atualizado {new Date(item.updatedAt).toLocaleDateString("pt-BR")}</small></span>
                 </button>
+                <button className="graph-card-rename" onClick={() => openRenameGraphDialog(item)}>✎ Renomear</button>
                 <button className="graph-card-categories" onClick={() => void openCategoriesFromLibrary(item.id)}>▦ Categorias</button>
                 <button className="graph-card-delete" onClick={() => void deleteGraphRecord(item)} aria-label={`Excluir ${item.name}`} title="Excluir grafo">×</button>
               </article>
             ))}
-            <button className="graph-card graph-card-new" onClick={() => void createGraphRecord()}>
+            <button className="graph-card graph-card-new" onClick={openCreateGraphDialog}>
               <span>＋</span><strong>Criar novo grafo</strong><small>Comece com um canvas vazio</small>
             </button>
           </div>
         </section>
+        <dialog
+          ref={createGraphDialogRef}
+          className="dialog graph-create-dialog"
+          aria-labelledby="create-graph-title"
+          onClose={() => { setCreateGraphError(""); setCreatingGraph(false); }}
+        >
+          <div className="dialog-header">
+            <h2 className="dialog-title" id="create-graph-title">Criar novo grafo</h2>
+            <button className="icon-button" onClick={() => createGraphDialogRef.current?.close()} aria-label="Fechar">×</button>
+          </div>
+          <form
+            id="create-graph-form"
+            className="dialog-body form-stack"
+            onSubmit={(event) => { event.preventDefault(); void createGraphRecord(); }}
+          >
+            <label>
+              Nome do grafo
+              <input
+                ref={createGraphNameRef}
+                value={createGraphName}
+                maxLength={120}
+                onChange={(event) => { setCreateGraphName(event.target.value); setCreateGraphError(""); }}
+                placeholder="Ex.: Lattice UI"
+                disabled={creatingGraph}
+              />
+            </label>
+            <div>
+              <strong style={{ display: "block", marginBottom: 5, color: "#dce2f3", fontSize: 12 }}>Categorias personalizadas</strong>
+              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person e Event são categorias fixas e serão incluídas automaticamente.</small>
+            </div>
+            {createCategoryNames.map((categoryName, index) => (
+              <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ flex: 1 }}>
+                  Categoria {index + 1}
+                  <input
+                    value={categoryName}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setCreateCategoryNames((current) => current.map((item, itemIndex) => itemIndex === index ? value : item));
+                      setCreateGraphError("");
+                    }}
+                    placeholder={index === 0 ? "Ex.: Tela" : "Ex.: Funcionalidade"}
+                    disabled={creatingGraph}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="icon-button"
+                  style={{ marginTop: 17 }}
+                  onClick={() => setCreateCategoryNames((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  disabled={creatingGraph}
+                  aria-label={`Remover categoria ${index + 1}`}
+                >×</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="category-add"
+              onClick={() => setCreateCategoryNames((current) => [...current, ""])}
+              disabled={creatingGraph}
+            >＋ Adicionar categoria personalizada</button>
+            {createGraphError && <p className="error" role="alert">{createGraphError}</p>}
+          </form>
+          <div className="dialog-footer">
+            <button type="button" onClick={() => createGraphDialogRef.current?.close()} disabled={creatingGraph}>Cancelar</button>
+            <button type="submit" form="create-graph-form" className="primary" disabled={creatingGraph}>
+              {creatingGraph ? "Criando…" : "Criar grafo"}
+            </button>
+          </div>
+        </dialog>
+        <dialog
+          ref={renameGraphDialogRef}
+          className="dialog"
+          aria-labelledby="rename-graph-title"
+          onClose={() => { setRenameGraph(null); setRenameGraphError(""); setRenamingGraph(false); }}
+        >
+          <div className="dialog-header">
+            <h2 className="dialog-title" id="rename-graph-title">Renomear grafo</h2>
+            <button className="icon-button" onClick={() => renameGraphDialogRef.current?.close()} aria-label="Fechar">×</button>
+          </div>
+          <form
+            id="rename-graph-form"
+            className="dialog-body form-stack"
+            onSubmit={(event) => { event.preventDefault(); void renameGraphRecord(); }}
+          >
+            <label>
+              Novo nome
+              <input
+                ref={renameGraphNameRef}
+                value={renameGraphName}
+                maxLength={120}
+                onChange={(event) => { setRenameGraphName(event.target.value); setRenameGraphError(""); }}
+                disabled={renamingGraph}
+              />
+            </label>
+            {renameGraphError && <p className="error" role="alert">{renameGraphError}</p>}
+          </form>
+          <div className="dialog-footer">
+            <button type="button" onClick={() => renameGraphDialogRef.current?.close()} disabled={renamingGraph}>Cancelar</button>
+            <button type="submit" form="rename-graph-form" className="primary" disabled={renamingGraph}>
+              {renamingGraph ? "Salvando…" : "Salvar nome"}
+            </button>
+          </div>
+        </dialog>
         {invalidGraphModal}
       </main>
     );
   }
 
   if (screen === "categories") {
-    return <><CategoryManager graph={graph} status={status} onCommit={commitGraph} onBack={returnFromCategories} />{invalidGraphModal}</>;
+    return <>
+      <CategoryManager
+        graph={graph}
+        status={status}
+        onCommit={commitGraph}
+        onBack={returnFromCategories}
+        backDestination={categoryReturnScreen === "editor" ? "Editor" : "Biblioteca"}
+      />
+      {invalidGraphModal}
+    </>;
   }
 
   return (
     <main className="graph-shell" aria-label="Editor visual de grafo">
       <header className="topbar">
-        <IconToolButton id="library" icon="←" label="Biblioteca" description="Voltar aos grafos salvos" onClick={() => void returnToLibrary()} />
+        <button className="library-back" onClick={() => void returnToLibrary()} aria-label="Voltar para Biblioteca">
+          ← <span>Biblioteca</span>
+        </button>
         <div className="brand" aria-label="Lattice Knowledge Graph">
           <span className="brand-mark">L</span>
           <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
@@ -1187,7 +1406,7 @@ export default function GraphEditor() {
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
         </nav>
         <div className="top-actions">
-          <span className="save-state"><i />{status}</span>
+          <span className="save-state" role="status" aria-live="polite"><i />{status}</span>
           <IconToolButton id="help" icon="?" label="Atalhos" description="Mostrar comandos rápidos" onClick={() => setHelpOpen((open) => !open)} active={helpOpen} />
           <IconToolButton id="inspector" icon="◫" label="Inspetor" description={inspectorOpen ? "Ocultar painel de propriedades" : "Mostrar painel de propriedades"} onClick={() => setInspectorOpen((open) => !open)} active={inspectorOpen} />
         </div>

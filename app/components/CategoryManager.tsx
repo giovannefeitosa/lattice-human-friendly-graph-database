@@ -25,11 +25,13 @@ const FIELD_TYPES: Array<{ value: CategoryFieldType; label: string }> = [
 ];
 
 type GraphUpdate = GraphData | ((current: GraphData) => GraphData);
-type Props = {
+export type CategoryManagerProps = {
   graph: GraphData;
   status: string;
   onCommit: (next: GraphUpdate) => void;
   onBack: () => void;
+  backDestination?: string;
+  onRenameGraph?: (name: string) => void;
 };
 
 function categoryIdForName(name: string, categories: NodeCategory[]) {
@@ -100,7 +102,14 @@ function FieldRow({
   </div>;
 }
 
-export default function CategoryManager({ graph, status, onCommit, onBack }: Props) {
+export default function CategoryManager({
+  graph,
+  status,
+  onCommit,
+  onBack,
+  backDestination = "Editor",
+  onRenameGraph,
+}: CategoryManagerProps) {
   const [selectedId, setSelectedId] = useState(graph.categories[0]?.id ?? "concept");
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -108,10 +117,25 @@ export default function CategoryManager({ graph, status, onCommit, onBack }: Pro
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState<CategoryFieldType>("text");
   const [categoryNameDraft, setCategoryNameDraft] = useState(graph.categories[0]?.name ?? "Concept");
+  const [graphNameDraft, setGraphNameDraft] = useState(graph.name ?? "");
   const [error, setError] = useState("");
   const selected = graph.categories.find((category) => category.id === selectedId) ?? graph.categories[0];
   const fieldsLocked = selected ? categoryFieldsLocked(selected.id) : true;
   const usageCount = selected ? graph.nodes.filter((node) => node.categoryId === selected.id).length : 0;
+
+  const renameGraph = () => {
+    const name = graphNameDraft.trim();
+    if (!name) {
+      setGraphNameDraft(graph.name ?? "");
+      setError("Informe o nome do grafo.");
+      return;
+    }
+    if (name === graph.name) return;
+    if (onRenameGraph) onRenameGraph(name);
+    else onCommit((current) => ({ ...current, name }));
+    setGraphNameDraft(name);
+    setError("");
+  };
 
   const createCategory = () => {
     const name = newCategoryName.trim();
@@ -206,13 +230,26 @@ export default function CategoryManager({ graph, status, onCommit, onBack }: Pro
 
   return <main className="categories-screen" aria-label="Categorias do grafo">
     <header className="categories-topbar">
-      <button className="categories-back" onClick={onBack} aria-label="Voltar">←</button>
+      <button className="categories-back" onClick={onBack} aria-label={`Voltar para ${backDestination}`}>← {backDestination}</button>
       <div className="brand" aria-label="Lattice Knowledge Graph">
         <span className="brand-mark">L</span>
         <span><strong>LATTICE</strong><small>CATEGORIAS</small></span>
       </div>
-      <div className="categories-title"><strong>{graph.name}</strong><small>Schema do grafo</small></div>
-      <span className="save-state"><i />{status}</span>
+      <label className="categories-title">
+        <input
+          aria-label="Nome do grafo"
+          value={graphNameDraft}
+          onChange={(event) => { setGraphNameDraft(event.target.value); setError(""); }}
+          onBlur={renameGraph}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") { setGraphNameDraft(graph.name ?? ""); event.currentTarget.blur(); }
+          }}
+          style={{ minWidth: 0, border: 0, outline: 0, padding: 0, color: "inherit", background: "transparent", font: "700 12px inherit" }}
+        />
+        <small>Nome do grafo · Enter para salvar</small>
+      </label>
+      <span className="save-state" role="status" aria-live="polite"><i />{status}</span>
     </header>
 
     <section className="categories-workspace">
@@ -226,7 +263,7 @@ export default function CategoryManager({ graph, status, onCommit, onBack }: Pro
           {graph.categories.map((category) => {
             const count = graph.nodes.filter((node) => node.categoryId === category.id).length;
             return <button key={category.id} className={category.id === selected?.id ? "active" : ""} onClick={() => { setSelectedId(category.id); setCategoryNameDraft(category.name); setError(""); }}>
-              <i style={{ background: category.color }} /><span><strong>{category.name}</strong><small>{category.fields.length} campos · {count} nós</small></span>{isBuiltInCategory(category.id) && <em>FIXA</em>}
+              <i style={{ background: category.color }} /><span><strong>{category.name}</strong><small>{category.fields.length} campos · {count} nós</small></span><em>{isBuiltInCategory(category.id) ? "FIXA" : "PERSONALIZADA"}</em>
             </button>;
           })}
         </nav>
