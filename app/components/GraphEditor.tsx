@@ -272,13 +272,6 @@ export default function GraphEditor() {
   }, [viewport]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (window.matchMedia("(max-width: 800px)").matches) setInspectorOpen(false);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     if (!nodeContextMenu) return;
     contextMenuButtonRef.current?.focus();
     const dismissOutside = (event: PointerEvent) => {
