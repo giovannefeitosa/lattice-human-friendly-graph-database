@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -66,6 +67,18 @@ type CommittedTextInputProps = {
   ariaLabel?: string;
   className?: string;
   normalize?: (value: string) => string;
+};
+
+type IconToolButtonProps = {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  description: string;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  primary?: boolean;
+  placement?: "top" | "bottom";
 };
 
 type DragState =
@@ -134,6 +147,27 @@ function CommittedTextInput({ value, onCommit, ariaLabel, className, normalize }
         if (event.key === "Escape") { setDraft(value); setInvalid(false); event.currentTarget.blur(); }
       }}
     />
+  );
+}
+
+function IconToolButton({ id, icon, label, description, onClick, disabled, active, primary, placement = "bottom" }: IconToolButtonProps) {
+  const tooltipId = `tooltip-${id}`;
+  return (
+    <button
+      type="button"
+      className={`icon-tool${active ? " active" : ""}${primary ? " primary" : ""}${placement === "top" ? " tooltip-top" : ""}`}
+      aria-label={label}
+      aria-describedby={tooltipId}
+      aria-pressed={active === undefined ? undefined : active}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="icon-tool-glyph" aria-hidden="true">{icon}</span>
+      <span className="custom-tooltip" id={tooltipId} role="tooltip">
+        <strong>{label}</strong>
+        <span>{description}</span>
+      </span>
+    </button>
   );
 }
 
@@ -1130,29 +1164,29 @@ export default function GraphEditor() {
   return (
     <main className="graph-shell" aria-label="Editor visual de grafo">
       <header className="topbar">
-        <button className="library-back" onClick={() => void returnToLibrary()} title="Voltar à biblioteca">←</button>
+        <IconToolButton id="library" icon="←" label="Biblioteca" description="Voltar aos grafos salvos" onClick={() => void returnToLibrary()} />
         <div className="brand" aria-label="Lattice Knowledge Graph">
           <span className="brand-mark">L</span>
           <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
         </div>
         <CommittedTextInput className="graph-name-input" ariaLabel="Nome do grafo" value={graph.name || ""} onCommit={(name) => commitGraph((current) => ({ ...current, name }))} />
         <nav className="toolbar" aria-label="Ferramentas do grafo">
-          <button onClick={() => createNode()} disabled={canvasMode === "view"} title="Adicionar nó">＋ Nó</button>
-          <button onClick={openCategoriesFromEditor} title="Gerenciar categorias">▦ Categorias</button>
-          <button onClick={startConnecting} disabled={canvasMode === "view"} className={connectMode ? "active" : ""} title="Escolha a origem e o destino">↗ Conectar</button>
-          <button onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} title="Excluir seleção">⌫ Excluir</button>
+          <IconToolButton id="new-node" icon="＋" label="Novo nó" description="Adicionar um nó ao centro da tela" onClick={() => createNode()} disabled={canvasMode === "view"} />
+          <IconToolButton id="categories" icon="▦" label="Categorias" description="Gerenciar categorias e propriedades" onClick={openCategoriesFromEditor} />
+          <IconToolButton id="connect" icon="↗" label="Conectar" description="Escolher a origem e o destino" onClick={startConnecting} disabled={canvasMode === "view"} active={connectMode} />
+          <IconToolButton id="delete-selection" icon="⌫" label="Excluir" description="Remover os elementos selecionados" onClick={deleteSelection} disabled={canvasMode === "view" || (!selectedNodes.size && !selectedEdges.size)} />
           <span className="divider" />
-          <button onClick={fitGraph} title="Enquadrar grafo">⊙ Enquadrar</button>
-          <button onClick={showAllNodesAndLayout} title="Revelar, reorganizar e enquadrar todos os nós">◎ Visualizar tudo</button>
-          <button onClick={openImportDialog} disabled={canvasMode === "view"} title="Importar JSON">⇧ Importar</button>
-          <button onClick={exportJson} title="Exportar JSON">↓ JSON</button>
-          <button className="primary" onClick={exportCypher} title="Exportar consultas Cypher">↓ Cypher</button>
+          <IconToolButton id="fit" icon="⊙" label="Enquadrar" description="Centralizar os nós visíveis" onClick={fitGraph} />
+          <IconToolButton id="show-all" icon="◎" label="Visualizar tudo" description="Revelar, reorganizar e enquadrar" onClick={showAllNodesAndLayout} />
+          <IconToolButton id="import" icon="⇧" label="Importar" description="Carregar um grafo em JSON" onClick={openImportDialog} disabled={canvasMode === "view"} />
+          <IconToolButton id="export-json" icon="{ }" label="Exportar JSON" description="Baixar os dados completos do grafo" onClick={exportJson} />
+          <IconToolButton id="export-cypher" icon="Cy" label="Exportar Cypher" description="Gerar consultas para o Neo4j" onClick={exportCypher} primary />
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={importGraph} hidden />
         </nav>
         <div className="top-actions">
           <span className="save-state"><i />{status}</span>
-          <button className="icon-button" onClick={() => setHelpOpen((open) => !open)} aria-label="Ajuda">?</button>
-          <button className="icon-button" onClick={() => setInspectorOpen((open) => !open)} aria-label="Alternar inspector">◫</button>
+          <IconToolButton id="help" icon="?" label="Atalhos" description="Mostrar comandos rápidos" onClick={() => setHelpOpen((open) => !open)} active={helpOpen} />
+          <IconToolButton id="inspector" icon="◫" label="Inspetor" description={inspectorOpen ? "Ocultar painel de propriedades" : "Mostrar painel de propriedades"} onClick={() => setInspectorOpen((open) => !open)} active={inspectorOpen} />
         </div>
       </header>
 
@@ -1372,25 +1406,13 @@ export default function GraphEditor() {
               ))}
             </div>
             <div className="mobile-mode-switch" role="group" aria-label="Modo do canvas">
-              <button
-                className={canvasMode === "edit" ? "active" : ""}
-                aria-pressed={canvasMode === "edit"}
-                aria-label="Modo edição"
-                title="Editar"
-                onClick={() => selectCanvasMode("edit")}
-              ><span aria-hidden="true">✎</span><span className="mode-label">Editar</span></button>
-              <button
-                className={canvasMode === "view" ? "active" : ""}
-                aria-pressed={canvasMode === "view"}
-                aria-label="Modo visualização"
-                title="Visualizar"
-                onClick={() => selectCanvasMode("view")}
-              ><span aria-hidden="true">◎</span><span className="mode-label">Ver</span></button>
+              <IconToolButton id="edit-mode" icon="✎" label="Editar" description="Permitir alterações no grafo" onClick={() => selectCanvasMode("edit")} active={canvasMode === "edit"} placement="top" />
+              <IconToolButton id="view-mode" icon="◎" label="Visualizar" description="Navegar sem alterar o grafo" onClick={() => selectCanvasMode("view")} active={canvasMode === "view"} placement="top" />
             </div>
             <div className="zoom-control">
-              <button onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom / 1.2, .2, 3.5) }))}>−</button>
+              <button aria-label="Reduzir zoom" onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom / 1.2, .2, 3.5) }))}>−</button>
               <span>{Math.round(viewport.zoom * 100)}%</span>
-              <button onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom * 1.2, .2, 3.5) }))}>＋</button>
+              <button aria-label="Aumentar zoom" onClick={() => setViewport((view) => ({ ...view, zoom: clamp(view.zoom * 1.2, .2, 3.5) }))}>＋</button>
             </div>
           </div>
         </div>

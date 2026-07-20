@@ -140,7 +140,10 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
       <div className="entity-preview"><i style={{ background: selectedNode.color }} /><div><strong>{selectedNode.label}</strong><small>{selectedNode.id}</small></div></div>
       <label>Nome<CommittedTextInput value={selectedNode.label} onCommit={(label) => updateSelectedNode({ label })} /></label>
       <label>Categoria<select value={selectedNode.categoryId} onChange={(event) => selectNodeCategory(event.target.value)}>{graph.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-      <button className="category-add" onClick={onManageCategories}>▦ Gerenciar categorias</button>
+      <button className="category-add inspector-icon-action" onClick={onManageCategories} aria-label="Gerenciar categorias" aria-describedby="tooltip-manage-categories">
+        <span aria-hidden="true">▦</span>
+        <span className="custom-tooltip tooltip-right" id="tooltip-manage-categories" role="tooltip"><strong>Gerenciar categorias</strong><span>Editar tipos e propriedades dos nós</span></span>
+      </button>
       <label>Profundidade<input type="number" min="-10" max="10" value={selectedNode.z || 0} onChange={(event) => updateSelectedNode({ z: Number(event.target.value) })} /></label>
       {!!selectedCategory?.fields.length && <div className="typed-properties">
         <small>PROPRIEDADES DA CATEGORIA</small>

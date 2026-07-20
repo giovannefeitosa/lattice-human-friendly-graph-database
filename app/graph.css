@@ -2897,3 +2897,332 @@ pre.export-code {
   .new-field-form button { grid-column:1/-1 }
   .import-options { grid-template-columns:1fr }
 }
+
+/* Compact desktop workspace: designed for narrow, docked browser windows. */
+.graph-shell .topbar {
+  height: 56px;
+  min-height: 56px;
+  flex-basis: 56px;
+  padding-inline: 10px;
+  gap: 7px;
+  overflow: visible;
+}
+
+.graph-shell .topbar > .icon-tool:first-child {
+  flex: 0 0 auto;
+}
+
+.graph-shell .toolbar {
+  justify-content: center;
+  gap: 3px;
+  overflow: visible;
+}
+
+.graph-shell .top-actions {
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.graph-shell .icon-tool,
+.graph-shell .toolbar > .icon-tool {
+  position: relative;
+  display: inline-flex;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  padding: 0;
+  overflow: visible;
+  border-color: rgba(139, 157, 222, 0.1);
+  background: rgba(118, 138, 217, 0.035);
+}
+
+.graph-shell .icon-tool-glyph {
+  display: inline-grid;
+  min-width: 18px;
+  place-items: center;
+  color: currentColor;
+  font-size: 16px;
+  font-weight: 760;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.graph-shell .icon-tool[aria-label="Exportar JSON"] .icon-tool-glyph,
+.graph-shell .icon-tool[aria-label="Exportar Cypher"] .icon-tool-glyph {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: -0.08em;
+}
+
+.graph-shell .custom-tooltip {
+  position: absolute;
+  z-index: 500;
+  top: calc(100% + 10px);
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: 210px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 9px 10px;
+  gap: 4px;
+  border: 1px solid rgba(151, 167, 236, 0.22);
+  border-radius: 10px;
+  color: #f4f6ff;
+  background: linear-gradient(150deg, rgba(23, 28, 53, 0.98), rgba(8, 12, 27, 0.99));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  white-space: normal;
+  backdrop-filter: blur(18px);
+}
+
+.graph-shell .custom-tooltip::before {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  content: "";
+  border-top: 1px solid rgba(151, 167, 236, 0.22);
+  border-left: 1px solid rgba(151, 167, 236, 0.22);
+  background: #151a32;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.graph-shell .custom-tooltip strong {
+  color: #f5f6ff;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+.graph-shell .custom-tooltip > span {
+  color: #8d98b8;
+  font-size: 9px;
+  font-weight: 520;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.graph-shell .icon-tool:hover .custom-tooltip,
+.graph-shell .icon-tool:focus-visible .custom-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(-n + 2) .custom-tooltip {
+  left: 0;
+  transform: translate(0, -4px);
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(-n + 2):hover .custom-tooltip,
+.graph-shell .toolbar > .icon-tool:nth-of-type(-n + 2):focus-visible .custom-tooltip {
+  transform: translate(0, 0);
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(n + 7) .custom-tooltip,
+.graph-shell .top-actions .custom-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, -4px);
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(n + 7):hover .custom-tooltip,
+.graph-shell .toolbar > .icon-tool:nth-of-type(n + 7):focus-visible .custom-tooltip,
+.graph-shell .top-actions .icon-tool:hover .custom-tooltip,
+.graph-shell .top-actions .icon-tool:focus-visible .custom-tooltip {
+  transform: translate(0, 0);
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(-n + 2) .custom-tooltip::before {
+  left: 16px;
+}
+
+.graph-shell .toolbar > .icon-tool:nth-of-type(n + 7) .custom-tooltip::before,
+.graph-shell .top-actions .custom-tooltip::before {
+  right: 12px;
+  left: auto;
+}
+
+.graph-shell .tooltip-top .custom-tooltip {
+  top: auto;
+  bottom: calc(100% + 10px);
+  transform: translate(-50%, 4px);
+}
+
+.graph-shell .tooltip-top .custom-tooltip::before {
+  top: auto;
+  bottom: -5px;
+  border: 0;
+  border-right: 1px solid rgba(151, 167, 236, 0.22);
+  border-bottom: 1px solid rgba(151, 167, 236, 0.22);
+}
+
+.graph-shell .tooltip-top:hover .custom-tooltip,
+.graph-shell .tooltip-top:focus-visible .custom-tooltip {
+  transform: translate(-50%, 0);
+}
+
+.graph-shell .mobile-mode-switch .icon-tool {
+  width: 34px;
+  min-width: 34px;
+  height: 32px;
+  padding: 0;
+}
+
+.graph-shell .workspace > .inspector {
+  width: clamp(248px, 24vw, 286px);
+  min-width: clamp(248px, 24vw, 286px);
+  flex-basis: clamp(248px, 24vw, 286px);
+  padding: 13px;
+  gap: 10px;
+}
+
+.graph-shell .inspector-title {
+  min-height: 40px;
+  padding-bottom: 9px;
+}
+
+.graph-shell .form-stack {
+  gap: 10px;
+}
+
+.graph-shell .form-stack label {
+  gap: 5px;
+}
+
+.graph-shell .form-stack input,
+.graph-shell .form-stack select {
+  min-height: 34px;
+  padding-block: 7px;
+}
+
+.graph-shell .form-stack textarea {
+  min-height: 78px;
+}
+
+.graph-shell .entity-preview {
+  padding: 9px;
+}
+
+.graph-shell button.inspector-icon-action {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  align-self: flex-end;
+  padding: 0;
+  border-style: solid;
+  font-size: 15px;
+}
+
+.graph-shell .inspector-icon-action .custom-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, -4px);
+}
+
+.graph-shell .inspector-icon-action .custom-tooltip::before {
+  right: 12px;
+  left: auto;
+}
+
+.graph-shell .inspector-icon-action:hover .custom-tooltip,
+.graph-shell .inspector-icon-action:focus-visible .custom-tooltip {
+  transform: translate(0, 0);
+}
+
+@media (max-width: 1180px) {
+  .graph-shell .brand {
+    min-width: 34px;
+  }
+
+  .graph-shell .brand > span:last-child,
+  .graph-shell .graph-name-input,
+  .graph-shell .save-state {
+    display: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .graph-shell .topbar {
+    height: 54px;
+    min-height: 54px;
+    flex-basis: 54px;
+    padding-inline: 7px;
+    gap: 4px;
+  }
+
+  .graph-shell .topbar > .icon-tool:first-child,
+  .graph-shell .toolbar > button.icon-tool,
+  .graph-shell .top-actions > button.icon-tool {
+    display: inline-flex;
+    width: 31px;
+    min-width: 31px;
+    height: 31px;
+    flex-basis: 31px;
+    padding: 0;
+  }
+
+  .graph-shell .brand,
+  .graph-shell .brand-mark {
+    width: 31px;
+    min-width: 31px;
+    height: 31px;
+  }
+
+  .graph-shell .toolbar {
+    justify-content: center;
+    gap: 2px;
+    overflow: visible;
+  }
+
+  .graph-shell .toolbar .divider {
+    display: block;
+    height: 22px;
+    margin-inline: 1px;
+  }
+
+  .graph-shell .top-actions .icon-tool:first-of-type {
+    display: inline-flex;
+  }
+
+  .graph-shell .workspace > .inspector {
+    position: relative;
+    inset: auto;
+    z-index: 4;
+    width: 248px;
+    min-width: 248px;
+    height: auto;
+    flex: 0 0 248px;
+    padding: 12px;
+    box-shadow: -12px 0 38px rgba(0, 0, 0, 0.24);
+    animation: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .graph-shell .brand {
+    display: none;
+  }
+
+  .graph-shell .workspace > .inspector {
+    width: 232px;
+    min-width: 232px;
+    flex-basis: 232px;
+  }
+
+  .graph-shell .canvas-footer {
+    right: 8px;
+    left: 8px;
+  }
+
+  .graph-shell .canvas-footer > span {
+    display: none;
+  }
+}
