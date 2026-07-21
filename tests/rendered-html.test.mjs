@@ -45,6 +45,11 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /function curveGeometry/);
   assert.match(editor, /partial\.categoryId \?\? graph\.nodes\.at\(-1\)\?\.categoryId/);
   assert.match(editor, /const GRID_SIZE = 24/);
+  assert.match(editor, /Ctrl\/⌘ \+ D: duplicar nós/);
+  assert.match(editor, /event\.key\.toLowerCase\(\) === "d"/);
+  assert.match(editor, /x: node\.x \+ GRID_SIZE/);
+  assert.match(editor, /y: node\.y \+ GRID_SIZE/);
+  assert.match(editor, /setSelectedNodes\(new Set\(createdIds\)\)/);
   assert.match(editor, /label="Encaixar na grade"/);
   assert.match(editor, /active=\{snapToGrid\}/);
   assert.match(editor, /snapPointToGrid\(position\)/);

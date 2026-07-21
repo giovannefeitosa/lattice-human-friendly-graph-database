@@ -796,11 +796,44 @@ export default function GraphEditor() {
     setConnectSource(null);
   }, [commitGraph, selectedEdges, selectedNodes]);
 
+  const duplicateSelection = useCallback(() => {
+    if (canvasMode === "view" || !selectedNodes.size) return;
+    const createdIds: string[] = [];
+    commitGraph((current) => {
+      const duplicates = current.nodes
+        .filter((node) => selectedNodes.has(node.id))
+        .map((node) => {
+          const id = uid("node");
+          createdIds.push(id);
+          return {
+            ...node,
+            id,
+            x: node.x + GRID_SIZE,
+            y: node.y + GRID_SIZE,
+            properties: { ...node.properties },
+            ...(node.labels ? { labels: [...node.labels] } : {}),
+          };
+        });
+      return { ...current, nodes: [...current.nodes, ...duplicates] };
+    });
+    if (!createdIds.length) return;
+    setSelectedNodes(new Set(createdIds));
+    setSelectedEdges(new Set());
+    if (focusRootId) {
+      setPinnedVisibleNodes((current) => new Set([...current, ...createdIds]));
+    }
+    setStatus(createdIds.length === 1 ? "Nó duplicado" : `${createdIds.length} nós duplicados`);
+  }, [canvasMode, commitGraph, focusRootId, selectedNodes]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const editing =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d" && !editing && screen === "editor") {
+        event.preventDefault();
+        duplicateSelection();
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && !editing) {
         event.preventDefault();
         setSelectedNodes(new Set(graphRef.current.nodes.map((node) => node.id)));
@@ -819,7 +852,7 @@ export default function GraphEditor() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelection]);
+  }, [deleteSelection, duplicateSelection, screen]);
 
   const nodeMap = useMemo(
     () => new Map(graph.nodes.map((node) => [node.id, node])),
@@ -1653,6 +1686,7 @@ export default function GraphEditor() {
               <span>Scroll: zoom</span>
               <span>Shift + clique: multiseleção</span>
               <span>Ctrl/⌘ + A: selecionar tudo</span>
+              <span>Ctrl/⌘ + D: duplicar nós</span>
               <span>Delete: excluir</span>
             </div>
           )}
