@@ -94,3 +94,19 @@ test("captures entries defensively and rejects unscoped view positions", () => {
   assert.equal(entry.after.nodes[0].x, 24);
   assert.equal(entry.after.positions.a.x, 24);
 });
+
+test("records a connected multi-node move as one undoable action", () => {
+  const beforeNodes = [node("a", 0), node("b", 40), node("c", 80)];
+  const afterNodes = beforeNodes.map((item) => ({ ...item, x: item.x + 24 }));
+  const entry = createEditorHistoryEntry(
+    { nodes: beforeNodes, edges: [] },
+    { nodes: afterNodes, edges: [] },
+  );
+  const history = recordHistory(createHistoryState(), entry);
+
+  assert.equal(history.past.length, 1);
+  const transition = undoHistory(history);
+  const graph = { version: 3, categories: [category], nodes: afterNodes, edges: [] };
+  const undone = applyEditorHistoryEntry(graph, {}, transition.entry, "undo");
+  assert.deepEqual(undone.graph.nodes.map(({ x }) => x), [0, 40, 80]);
+});

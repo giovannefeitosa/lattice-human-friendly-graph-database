@@ -43,7 +43,8 @@ import {
 } from "@/lib/editor-history";
 import { calculateSmartGuides, type SmartGuideLine } from "@/lib/graph-guides";
 import {
-  connectedNodeIds,
+  buildNodeAdjacency,
+  connectedComponentNodeIds,
   getHierarchicalVisibleNodeIds,
   layoutGraph,
 } from "@/lib/graph-layout";
@@ -125,6 +126,11 @@ type DragState =
       kind: "nodes";
       start: Point;
       positions: PositionMap;
+      guideNodeIds: string[];
+      guideVisibleNodeIds: Set<string>;
+      nodes: GraphNode[];
+      latestPositions: PositionMap;
+      delta: Point;
       beforeNodes: GraphNode[];
       beforeViewPositions: PositionMap;
     }
@@ -473,6 +479,7 @@ export default function GraphEditor() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [smartGuides, setSmartGuides] = useState<SmartGuideLine[]>([]);
+  const [transientPositions, setTransientPositions] = useState<PositionMap>({});
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -506,9 +513,18 @@ export default function GraphEditor() {
   const pinchRef = useRef<PinchState | null>(null);
   const longPressRef = useRef<LongPressState | null>(null);
   const noteEditCancelledRef = useRef(false);
+  const dragFrameRef = useRef<number | null>(null);
+  const pendingDragPointRef = useRef<Point | null>(null);
 
   const resetHistory = useCallback(() => {
     historyRef.current = createHistoryState<EditorHistoryEntry>(100);
+  }, []);
+
+  const clearNodeDragPreview = useCallback(() => {
+    if (dragFrameRef.current !== null) window.cancelAnimationFrame(dragFrameRef.current);
+    dragFrameRef.current = null;
+    pendingDragPointRef.current = null;
+    setTransientPositions({});
   }, []);
 
   const cancelLongPress = useCallback(() => {
@@ -1296,13 +1312,22 @@ export default function GraphEditor() {
     () => views.find((view) => view.id === activeViewId) ?? null,
     [activeViewId, views],
   );
+  const nodeAdjacency = useMemo(
+    () => buildNodeAdjacency(graph),
+    [graph],
+  );
   const displayNodes = useMemo(
     () => graph.nodes.map((node) => {
-      if (activeView?.isPrimary) return node;
-      const position = viewPositions[node.id];
-      return position ? { ...node, x: position.x, y: position.y } : node;
+      const viewPosition = activeView?.isPrimary ? undefined : viewPositions[node.id];
+      const transientPosition = transientPositions[node.id];
+      if (!viewPosition && !transientPosition) return node;
+      return {
+        ...node,
+        ...(viewPosition ? { x: viewPosition.x, y: viewPosition.y } : {}),
+        ...(transientPosition ? { x: transientPosition.x, y: transientPosition.y } : {}),
+      };
     }),
-    [activeView?.isPrimary, graph.nodes, viewPositions],
+    [activeView?.isPrimary, graph.nodes, transientPositions, viewPositions],
   );
   const displayGraph = useMemo(
     () => ({ ...graph, nodes: displayNodes }),
@@ -1374,18 +1399,7 @@ export default function GraphEditor() {
       press.fired = true;
       const drag = dragRef.current;
       if (drag?.kind === "nodes") {
-        const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
-        if (currentView && !currentView.isPrimary) {
-          setViewPositions((current) => ({ ...current, ...drag.positions }));
-        } else {
-          setGraph((current) => ({
-            ...current,
-            nodes: current.nodes.map((node) => {
-              const origin = drag.positions[node.id];
-              return origin ? { ...node, x: origin.x, y: origin.y } : node;
-            }),
-          }));
-        }
+        clearNodeDragPreview();
       }
       dragRef.current = null;
       setSmartGuides([]);
@@ -1406,6 +1420,7 @@ export default function GraphEditor() {
     const rect = event.currentTarget.getBoundingClientRect();
     const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
     const view = viewportRef.current;
+    clearNodeDragPreview();
     dragRef.current = null;
     setSmartGuides([]);
     pinchRef.current = {
@@ -1460,6 +1475,7 @@ export default function GraphEditor() {
     touchPointsRef.current.delete(event.pointerId);
     if (touchPointsRef.current.size < 2) pinchRef.current = null;
     if (finishedLongPress) {
+      clearNodeDragPreview();
       dragRef.current = null;
       setSmartGuides([]);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -1468,6 +1484,7 @@ export default function GraphEditor() {
       return;
     }
     if (!wasPinching) return;
+    clearNodeDragPreview();
     dragRef.current = null;
     setSmartGuides([]);
     event.preventDefault();
@@ -1499,8 +1516,15 @@ export default function GraphEditor() {
     if (event.button !== 0) return;
     if (connectMode) return;
     setSmartGuides([]);
+    const recursiveDrag = event.ctrlKey && event.altKey;
     const nextSelection = new Set(selectedNodes);
-    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+    if (recursiveDrag) {
+      event.preventDefault();
+      if (!nextSelection.has(node.id)) {
+        nextSelection.clear();
+        nextSelection.add(node.id);
+      }
+    } else if (event.shiftKey || event.ctrlKey || event.metaKey) {
       if (nextSelection.has(node.id)) nextSelection.delete(node.id);
       else nextSelection.add(node.id);
     } else if (!nextSelection.has(node.id)) {
@@ -1510,15 +1534,26 @@ export default function GraphEditor() {
     setSelectedNodes(nextSelection);
     setSelectedEdges(new Set());
     if (!nextSelection.has(node.id)) return;
+    const movedNodeIds = recursiveDrag
+      ? connectedComponentNodeIds(nodeAdjacency, nextSelection)
+      : nextSelection;
     const positions: Record<string, Point> = {};
     displayNodes.forEach((candidate) => {
-      if (nextSelection.has(candidate.id)) positions[candidate.id] = { x: candidate.x, y: candidate.y };
+      if (movedNodeIds.has(candidate.id)) positions[candidate.id] = { x: candidate.x, y: candidate.y };
     });
+    const guideVisibleNodeIds = recursiveDrag
+      ? new Set([...visibleNodeIds].filter((nodeId) => !movedNodeIds.has(nodeId)))
+      : new Set(visibleNodeIds);
     svgRef.current?.setPointerCapture(event.pointerId);
     dragRef.current = {
       kind: "nodes",
       start: screenToWorld(event.clientX, event.clientY),
       positions,
+      guideNodeIds: recursiveDrag ? [node.id] : [...movedNodeIds],
+      guideVisibleNodeIds,
+      nodes: displayNodes,
+      latestPositions: positions,
+      delta: { x: 0, y: 0 },
       beforeNodes: graphRef.current.nodes,
       beforeViewPositions: { ...viewPositionsRef.current },
     };
@@ -1540,6 +1575,39 @@ export default function GraphEditor() {
       height: node.height ?? NOTE_DEFAULT_HEIGHT,
       beforeNodes: graphRef.current.nodes,
     };
+  };
+
+  const applyNodeDragPoint = (drag: Extract<DragState, { kind: "nodes" }>, point: Point) => {
+    const dx = point.x - drag.start.x;
+    const dy = point.y - drag.start.y;
+    let correctedDx = dx;
+    let correctedDy = dy;
+    if (snapToGrid) {
+      const guideResult = calculateSmartGuides({
+        nodes: drag.nodes,
+        selectedIds: drag.guideNodeIds,
+        positions: drag.positions,
+        dx,
+        dy,
+        zoom: viewportRef.current.zoom,
+        gridSize: GRID_SIZE,
+        visibleNodeIds: drag.guideVisibleNodeIds,
+      });
+      correctedDx = guideResult.dx;
+      correctedDy = guideResult.dy;
+      setSmartGuides(guideResult.lines);
+    } else {
+      setSmartGuides([]);
+    }
+    const nextPositions = Object.fromEntries(
+      Object.entries(drag.positions).map(([id, origin]) => [
+        id,
+        { x: origin.x + correctedDx, y: origin.y + correctedDy },
+      ]),
+    ) as PositionMap;
+    drag.latestPositions = nextPositions;
+    drag.delta = { x: correctedDx, y: correctedDy };
+    setTransientPositions(nextPositions);
   };
 
   const movePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -1568,76 +1636,50 @@ export default function GraphEditor() {
       });
       return;
     }
-    const point = screenToWorld(event.clientX, event.clientY);
-    const dx = point.x - drag.start.x;
-    const dy = point.y - drag.start.y;
-    let nextPositions: PositionMap;
-    if (snapToGrid) {
-      const guideResult = calculateSmartGuides({
-        nodes: displayNodes,
-        selectedIds: Object.keys(drag.positions),
-        positions: {
-          ...Object.fromEntries(displayNodes.map((node) => [node.id, { x: node.x, y: node.y }])),
-          ...drag.positions,
-        },
-        dx,
-        dy,
-        zoom: viewportRef.current.zoom,
-        gridSize: GRID_SIZE,
-        visibleNodeIds,
-      });
-      nextPositions = guideResult.positions;
-      setSmartGuides(guideResult.lines);
-    } else {
-      nextPositions = Object.fromEntries(Object.entries(drag.positions).map(([id, origin]) => [
-        id,
-        { x: origin.x + dx, y: origin.y + dy },
-      ])) as PositionMap;
-      setSmartGuides([]);
-    }
-    const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
-    if (currentView && !currentView.isPrimary) {
-      setViewPositions((current) => {
-        const next = { ...current, ...nextPositions };
-        viewPositionsRef.current = next;
-        return next;
-      });
-    } else {
-      setGraph((current) => {
-        const next = {
-          ...current,
-          nodes: current.nodes.map((node) => {
-          const position = nextPositions[node.id];
-          return position ? { ...node, ...position } : node;
-          }),
-        };
-        graphRef.current = next;
-        return next;
-      });
-    }
+    pendingDragPointRef.current = screenToWorld(event.clientX, event.clientY);
+    if (dragFrameRef.current !== null) return;
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      const nextPoint = pendingDragPointRef.current;
+      pendingDragPointRef.current = null;
+      const activeDrag = dragRef.current;
+      if (!nextPoint || activeDrag?.kind !== "nodes") return;
+      applyNodeDragPoint(activeDrag, nextPoint);
+    });
   };
 
   const endPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (pinchRef.current) return;
     const drag = dragRef.current;
     if (drag?.kind === "nodes") {
+      if (dragFrameRef.current !== null) window.cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+      const finalPoint = pendingDragPointRef.current;
+      pendingDragPointRef.current = null;
+      if (finalPoint) applyNodeDragPoint(drag, finalPoint);
+      const changed = drag.delta.x !== 0 || drag.delta.y !== 0;
       const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
-      if (currentView && !currentView.isPrimary) {
-        const afterPositions = viewPositionsRef.current;
-        if (JSON.stringify(drag.beforeViewPositions) !== JSON.stringify(afterPositions)) {
-          historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
-            { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: drag.beforeViewPositions },
-            { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: afterPositions },
-            currentView.id,
-          ));
-        }
-      } else if (JSON.stringify(drag.beforeNodes) !== JSON.stringify(graphRef.current.nodes)) {
+      if (changed && currentView && !currentView.isPrimary) {
+        const afterPositions = { ...drag.beforeViewPositions, ...drag.latestPositions };
+        historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+          { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: drag.beforeViewPositions },
+          { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: afterPositions },
+          currentView.id,
+        ));
+        viewPositionsRef.current = afterPositions;
+        setViewPositions(afterPositions);
+      } else if (changed) {
+        const afterNodes = graphRef.current.nodes.map((node) => {
+          const position = drag.latestPositions[node.id];
+          return position ? { ...node, ...position } : node;
+        });
         historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
           { nodes: drag.beforeNodes, edges: graphRef.current.edges },
-          { nodes: graphRef.current.nodes, edges: graphRef.current.edges },
+          { nodes: afterNodes, edges: graphRef.current.edges },
         ));
-        commitGraph((current) => current, { history: false });
+        commitGraph((current) => ({ ...current, nodes: afterNodes }), { history: false });
       }
+      clearNodeDragPreview();
     } else if (drag?.kind === "note-resize" && JSON.stringify(drag.beforeNodes) !== JSON.stringify(graphRef.current.nodes)) {
       historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
         { nodes: drag.beforeNodes, edges: graphRef.current.edges },
@@ -1741,11 +1783,13 @@ export default function GraphEditor() {
   useEffect(() => () => {
     stopPanHold();
     stopPanAnimation();
+    if (dragFrameRef.current !== null) window.cancelAnimationFrame(dragFrameRef.current);
     touchPointsRef.current.clear();
     pinchRef.current = null;
   }, [stopPanAnimation, stopPanHold]);
 
   const selectCanvasMode = (mode: CanvasMode) => {
+    clearNodeDragPreview();
     dragRef.current = null;
     setCanvasMode(mode);
     if (mode === "view") {
@@ -1839,7 +1883,7 @@ export default function GraphEditor() {
     cancelLongPress();
     closeNodeContextMenu();
     const orphanIds = graphRef.current.nodes
-      .filter((candidate) => connectedNodeIds(graphRef.current, candidate.id).size === 0)
+      .filter((candidate) => (nodeAdjacency.get(candidate.id)?.size ?? 0) === 0)
       .map((candidate) => candidate.id);
     setFocusRootId(nodeId);
     setCollapsedNodes(new Set(
@@ -2262,6 +2306,7 @@ export default function GraphEditor() {
               <strong>Atalhos</strong>
               <span>Duplo clique: novo nó</span>
               <span>Arraste: mover / navegar</span>
+              <span>Ctrl + Alt + arraste: mover redes conectadas</span>
               <span>Scroll: zoom</span>
               <span>Shift + clique: multiseleção</span>
               <span>Ctrl/⌘ + A: selecionar tudo</span>
@@ -2367,7 +2412,7 @@ export default function GraphEditor() {
                   const selected = selectedNodes.has(node.id);
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
-                  const connectionCount = connectedNodeIds(graph, node.id).size;
+                  const connectionCount = nodeAdjacency.get(node.id)?.size ?? 0;
                   const expanded = !collapsedNodes.has(node.id);
                   const isNote = node.categoryId === "note";
                   const isLinkPreview = isLinkPreviewCategory(node.categoryId);
@@ -2393,6 +2438,7 @@ export default function GraphEditor() {
                       onContextMenu={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
+                        clearNodeDragPreview();
                         dragRef.current = null;
                         openNodeContextMenu(node.id, event.clientX, event.clientY, event.currentTarget);
                       }}

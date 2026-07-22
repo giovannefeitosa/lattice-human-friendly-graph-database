@@ -59,14 +59,49 @@ function seededRandom(seed = 0x6d2b79f5) {
   };
 }
 
-/** Returns direct neighbours without considering edge direction. */
-export function connectedNodeIds(graph: GraphData, nodeId: string): Set<string> {
-  const connected = new Set<string>();
+export type NodeAdjacency = Map<string, Set<string>>;
+
+/** Builds an undirected adjacency index for repeated graph traversals. */
+export function buildNodeAdjacency(graph: Pick<GraphData, "nodes" | "edges">): NodeAdjacency {
+  const adjacency: NodeAdjacency = new Map(
+    graph.nodes.map((node) => [node.id, new Set<string>()]),
+  );
   for (const edge of graph.edges) {
-    if (edge.source === nodeId) connected.add(edge.target);
-    if (edge.target === nodeId) connected.add(edge.source);
+    const source = adjacency.get(edge.source);
+    const target = adjacency.get(edge.target);
+    if (!source || !target) continue;
+    source.add(edge.target);
+    target.add(edge.source);
+  }
+  return adjacency;
+}
+
+/** Returns the union of every undirected component reached from the roots. */
+export function connectedComponentNodeIds(
+  adjacency: ReadonlyMap<string, ReadonlySet<string>>,
+  rootNodeIds: Iterable<string>,
+): Set<string> {
+  const connected = new Set<string>();
+  const queue: string[] = [];
+  for (const nodeId of rootNodeIds) {
+    if (adjacency.has(nodeId) && !connected.has(nodeId)) {
+      connected.add(nodeId);
+      queue.push(nodeId);
+    }
+  }
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    for (const nodeId of adjacency.get(queue[cursor]) ?? []) {
+      if (connected.has(nodeId)) continue;
+      connected.add(nodeId);
+      queue.push(nodeId);
+    }
   }
   return connected;
+}
+
+/** Returns direct neighbours without considering edge direction. */
+export function connectedNodeIds(graph: GraphData, nodeId: string): Set<string> {
+  return new Set(buildNodeAdjacency(graph).get(nodeId) ?? []);
 }
 
 /** Returns only outgoing neighbours: the direct children in the hierarchy. */

@@ -46,6 +46,9 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /partial\.categoryId \?\? graph\.nodes\.at\(-1\)\?\.categoryId/);
   assert.match(editor, /const GRID_SIZE = 24/);
   assert.match(editor, /Ctrl\/⌘ \+ D: duplicar nós/);
+  assert.match(editor, /Ctrl \+ Alt \+ arraste: mover redes conectadas/);
+  assert.match(editor, /event\.ctrlKey && event\.altKey/);
+  assert.match(editor, /requestAnimationFrame/);
   assert.match(editor, /event\.key\.toLowerCase\(\) === "d"/);
   assert.match(editor, /x: origin\.x \+ GRID_SIZE/);
   assert.match(editor, /y: origin\.y \+ GRID_SIZE/);
@@ -121,7 +124,7 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(editor, /getHierarchicalVisibleNodeIds/);
   assert.match(editor, /const expanded = !collapsedNodes\.has\(node\.id\)/);
   assert.match(editor, /Filhos contraídos/);
-  assert.match(editor, /connectedNodeIds\(graphRef\.current, candidate\.id\)\.size === 0/);
+  assert.match(editor, /nodeAdjacency\.get\(candidate\.id\)\?\.size \?\? 0/);
   assert.doesNotMatch(editor, /progressiveRootId/);
   assert.match(editor, /onContextMenu/);
   assert.match(inspector, /Inspector de propriedades/);

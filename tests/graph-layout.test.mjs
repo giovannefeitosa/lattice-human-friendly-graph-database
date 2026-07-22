@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const {
+  buildNodeAdjacency,
   childNodeIds,
+  connectedComponentNodeIds,
   connectedNodeIds,
   getHierarchicalVisibleNodeIds,
   layoutGraph,
@@ -33,6 +35,43 @@ test("finds neighbours in both relation directions", () => {
   assert.deepEqual([...connectedNodeIds(graph, "b")].sort(), ["a", "c"]);
   assert.deepEqual([...childNodeIds(graph, "b")], []);
   assert.deepEqual([...childNodeIds(graph, "c")].sort(), ["b", "d"]);
+});
+
+test("unites undirected connected components from multiple roots without duplicates", () => {
+  const componentGraph = {
+    ...graph,
+    nodes: [...graph.nodes, node("e"), node("f"), node("isolated")],
+    edges: [
+      { id: "ba", source: "b", target: "a", type: "RELATES_TO", properties: {} },
+      { id: "cb", source: "c", target: "b", type: "RELATES_TO", properties: {} },
+      { id: "ac", source: "a", target: "c", type: "RELATES_TO", properties: {} },
+      { id: "ef", source: "e", target: "f", type: "RELATES_TO", properties: {} },
+    ],
+  };
+  const adjacency = buildNodeAdjacency(componentGraph);
+
+  assert.deepEqual([...connectedComponentNodeIds(adjacency, ["a"])].sort(), ["a", "b", "c"]);
+  assert.deepEqual(
+    [...connectedComponentNodeIds(adjacency, ["c", "e", "missing"])].sort(),
+    ["a", "b", "c", "e", "f"],
+  );
+  assert.deepEqual([...connectedComponentNodeIds(adjacency, ["isolated"])], ["isolated"]);
+});
+
+test("traverses a cyclic graph with 10,000 nodes iteratively", () => {
+  const size = 10_000;
+  const nodes = Array.from({ length: size }, (_, index) => node(`n${index}`));
+  const edges = Array.from({ length: size }, (_, index) => ({
+    id: `e${index}`,
+    source: `n${index}`,
+    target: `n${(index + 1) % size}`,
+    type: "RELATES_TO",
+    properties: {},
+  }));
+  const connected = connectedComponentNodeIds(buildNodeAdjacency({ nodes, edges }), ["n0"]);
+
+  assert.equal(connected.size, size);
+  assert.ok(connected.has(`n${size - 1}`));
 });
 
 test("expands only outgoing children and keeps parents out of focused branches", () => {
