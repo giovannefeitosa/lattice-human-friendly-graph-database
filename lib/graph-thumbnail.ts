@@ -1,6 +1,9 @@
 import {
   NOTE_DEFAULT_HEIGHT,
   NOTE_DEFAULT_WIDTH,
+  isLinkPreviewCategory,
+  LINK_PREVIEW_HEIGHT,
+  LINK_PREVIEW_WIDTH,
   normalizeGraph,
   type GraphData,
 } from "./graph";
@@ -26,8 +29,8 @@ export function graphThumbnailSvg(input: GraphData | unknown) {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}"><rect width="${WIDTH}" height="${HEIGHT}" fill="#080b14"/><circle cx="180" cy="110" r="28" fill="none" stroke="#6f5bc7" stroke-width="2" stroke-dasharray="5 7"/></svg>`;
   }
 
-  const halfWidth = (node: (typeof nodes)[number]) => node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : 48;
-  const halfHeight = (node: (typeof nodes)[number]) => node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : 48;
+  const halfWidth = (node: (typeof nodes)[number]) => node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : isLinkPreviewCategory(node.categoryId) ? LINK_PREVIEW_WIDTH / 2 : 48;
+  const halfHeight = (node: (typeof nodes)[number]) => node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : isLinkPreviewCategory(node.categoryId) ? LINK_PREVIEW_HEIGHT / 2 : 48;
   const minX = Math.min(...nodes.map((node) => node.x - halfWidth(node)));
   const maxX = Math.max(...nodes.map((node) => node.x + halfWidth(node)));
   const minY = Math.min(...nodes.map((node) => node.y - halfHeight(node)));
@@ -58,6 +61,11 @@ export function graphThumbnailSvg(input: GraphData | unknown) {
       const fold = Math.min(10, width * .14, height * .14);
       const points = `${left.toFixed(1)},${top.toFixed(1)} ${(left + width - fold).toFixed(1)},${top.toFixed(1)} ${(left + width).toFixed(1)},${(top + fold).toFixed(1)} ${(left + width).toFixed(1)},${(top + height).toFixed(1)} ${left.toFixed(1)},${(top + height).toFixed(1)}`;
       return `<polygon points="${points}" fill="${safeColor(node.color)}" stroke="#ffffff" stroke-opacity=".42" stroke-width="1.5"/>`;
+    }
+    if (isLinkPreviewCategory(node.categoryId)) {
+      const width = LINK_PREVIEW_WIDTH * scale;
+      const height = LINK_PREVIEW_HEIGHT * scale;
+      return `<rect x="${(position.x - width / 2).toFixed(1)}" y="${(position.y - height / 2).toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="${Math.max(3, 9 * scale).toFixed(1)}" fill="#101627" stroke="${safeColor(node.color)}" stroke-width="2"/>`;
     }
     return `<circle cx="${position.x.toFixed(1)}" cy="${position.y.toFixed(1)}" r="${Math.max(7, Math.min(15, 11 * Math.sqrt(scale))).toFixed(1)}" fill="${safeColor(node.color)}" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>`;
   }).join("");

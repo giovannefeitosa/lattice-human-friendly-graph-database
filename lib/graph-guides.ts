@@ -6,6 +6,12 @@ export const SMART_GUIDE_THRESHOLD_PX = 8;
 export const GRAPH_NODE_RADIUS = 48;
 export const GUIDE_NOTE_DEFAULT_WIDTH = 220;
 export const GUIDE_NOTE_DEFAULT_HEIGHT = 160;
+const GUIDE_LINK_PREVIEW_WIDTH = 240;
+const GUIDE_LINK_PREVIEW_HEIGHT = 150;
+
+function isLinkPreviewCategory(categoryId: string) {
+  return categoryId === "youtube-video" || categoryId === "http-url";
+}
 
 export type GuideAnchor = "start" | "center" | "end";
 
@@ -74,10 +80,10 @@ function nodeBounds(node: GraphNode, position: NodePosition): Bounds {
   const scale = visualScale(node);
   const halfWidth = (node.categoryId === "note"
     ? (node.width ?? GUIDE_NOTE_DEFAULT_WIDTH) / 2
-    : GRAPH_NODE_RADIUS) * scale;
+    : isLinkPreviewCategory(node.categoryId) ? GUIDE_LINK_PREVIEW_WIDTH / 2 : GRAPH_NODE_RADIUS) * scale;
   const halfHeight = (node.categoryId === "note"
     ? (node.height ?? GUIDE_NOTE_DEFAULT_HEIGHT) / 2
-    : GRAPH_NODE_RADIUS) * scale;
+    : isLinkPreviewCategory(node.categoryId) ? GUIDE_LINK_PREVIEW_HEIGHT / 2 : GRAPH_NODE_RADIUS) * scale;
   return {
     id: node.id,
     left: position.x - halfWidth,

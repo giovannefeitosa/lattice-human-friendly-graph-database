@@ -170,3 +170,19 @@ test("uses persisted Note dimensions when avoiding layout collisions", () => {
     "expected the large Note to reserve more layout space",
   );
 });
+
+test("reserves rectangular collision space for link previews", () => {
+  const sized = {
+    categories: graph.categories,
+    nodes: [
+      { ...node("video"), categoryId: "youtube-video", type: "YouTube Video" },
+      node("concept"),
+    ],
+    edges: [],
+  };
+  const result = layoutGraph(sized, { iterations: 300 });
+  assert.ok(Math.hypot(
+    result.nodes[0].x - result.nodes[1].x,
+    result.nodes[0].y - result.nodes[1].y,
+  ) > 210);
+});

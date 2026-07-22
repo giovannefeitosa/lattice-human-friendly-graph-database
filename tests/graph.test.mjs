@@ -21,7 +21,7 @@ const emptyGraph = (extra = {}) => ({
   ...extra,
 });
 
-test("accepts only schema v3 and injects the four built-in categories", () => {
+test("accepts only schema v3 and injects all built-in categories", () => {
   const graph = normalizeGraph(emptyGraph());
   assert.equal(graph.version, 3);
   assert.deepEqual(graph.categories.map(({ id, name }) => ({ id, name })), [
@@ -29,9 +29,34 @@ test("accepts only schema v3 and injects the four built-in categories", () => {
     { id: "person", name: "Person" },
     { id: "event", name: "Event" },
     { id: "note", name: "Note" },
+    { id: "youtube-video", name: "YouTube Video" },
+    { id: "http-url", name: "HTTP URL" },
   ]);
   assert.throws(() => normalizeGraph({ name: "Legado", nodes: [], edges: [] }), /version must be 3/);
   assert.throws(() => normalizeGraph({ ...emptyGraph(), version: 2 }), /version must be 3/);
+});
+
+test("defines locked URL previews and migrates legacy same-name categories", () => {
+  const graph = normalizeGraph(emptyGraph({
+    categories: [
+      { id: "legacy-youtube", name: "youtube video", color: "#aa0000", fields: [{ key: "extra", type: "text" }] },
+      { id: "http-url", name: "Antigo", color: "#0099cc", fields: [] },
+    ],
+    nodes: [
+      { id: "video", label: "Vídeo", categoryId: "legacy-youtube", x: 0, y: 0, properties: { url: "https://youtu.be/abcdefghijk", extra: "preservado" } },
+      { id: "link", label: "Site", categoryId: "http-url", x: 10, y: 20, properties: { url: "https://example.com" } },
+    ],
+  }));
+  assert.deepEqual(graph.categories.find(({ id }) => id === "youtube-video"), {
+    id: "youtube-video", name: "YouTube Video", color: "#aa0000", fields: [{ key: "url", type: "text" }],
+  });
+  assert.deepEqual(graph.categories.find(({ id }) => id === "http-url"), {
+    id: "http-url", name: "HTTP URL", color: "#0099cc", fields: [{ key: "url", type: "text" }],
+  });
+  assert.equal(graph.nodes[0].categoryId, "youtube-video");
+  assert.equal(graph.nodes[0].properties.extra, "preservado");
+  assert.throws(() => removeCategoryField(graph, "youtube-video", "url"), /fields are locked/);
+  assert.throws(() => removeCustomCategory(graph, "http-url"), /cannot be deleted/);
 });
 
 test("normalizes Note dimensions and preserves its visible content", () => {

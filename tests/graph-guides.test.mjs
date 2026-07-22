@@ -107,3 +107,20 @@ test("aligns real Note edges and z-scaled circle edges", () => {
   assert.ok(Math.abs(scaledAlignment.positions.drag.x - 192.36) < 0.000001);
   assert.equal(scaledAlignment.lines[0].targetNodeId, "deep");
 });
+
+test("aligns against the rectangular edge of link preview cards", () => {
+  const result = calculateSmartGuides({
+    nodes: [
+      node("drag", 0, 0),
+      node("video", 360, 300, { categoryId: "youtube-video", type: "YouTube Video" }),
+    ],
+    selectedIds: ["drag"],
+    positions: { drag: { x: 0, y: 0 } },
+    dx: 190,
+    dy: 0,
+    zoom: 1,
+  });
+  assert.equal(result.positions.drag.x, 192);
+  assert.equal(result.lines[0].selectedAnchor, "end");
+  assert.equal(result.lines[0].targetAnchor, "start");
+});

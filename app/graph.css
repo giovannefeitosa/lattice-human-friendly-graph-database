@@ -1983,6 +1983,154 @@ pre.export-code {
   filter: url(#node-shadow) brightness(1.035);
 }
 
+.graph-shell .link-preview-node foreignObject {
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.graph-shell .link-preview-card {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #101627;
+  color: #f5f7ff;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+.graph-shell .link-preview-empty,
+.graph-shell .link-preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  text-align: center;
+}
+
+.graph-shell .link-preview-empty span,
+.graph-shell .link-preview-error span,
+.graph-shell .link-preview-media.placeholder span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  font-size: 14px;
+}
+
+.graph-shell .link-preview-empty strong,
+.graph-shell .link-preview-error strong {
+  font-size: 13px;
+}
+
+.graph-shell .link-preview-empty small,
+.graph-shell .link-preview-error small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #818ca7;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-shell .link-preview-error span {
+  border-color: rgba(255, 99, 135, .36);
+  color: #ff8ba6;
+}
+
+.graph-shell .link-preview-loading {
+  display: grid;
+  grid-template-rows: 82px 10px 12px 8px;
+  gap: 7px;
+  padding-bottom: 10px;
+}
+
+.graph-shell .link-preview-loading div,
+.graph-shell .link-preview-loading i {
+  background: linear-gradient(90deg, #182038, #26304c, #182038);
+  background-size: 200% 100%;
+  animation: link-preview-pulse 1.3s ease-in-out infinite;
+}
+
+.graph-shell .link-preview-loading i {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 0 10px;
+  border-radius: 5px;
+}
+
+.graph-shell .link-preview-loading i:last-child { width: 58%; }
+
+@keyframes link-preview-pulse {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.graph-shell .link-preview-success {
+  display: grid;
+  grid-template-rows: 82px 1fr;
+}
+
+.graph-shell .link-preview-media {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #171f35;
+}
+
+.graph-shell .link-preview-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.graph-shell .link-preview-media.placeholder {
+  color: #b8c4df;
+}
+
+.graph-shell .link-preview-copy {
+  min-width: 0;
+  padding: 7px 10px 8px;
+}
+
+.graph-shell .link-preview-copy small,
+.graph-shell .link-preview-copy strong,
+.graph-shell .link-preview-copy p {
+  display: block;
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-shell .link-preview-copy small {
+  color: #7986a4;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.graph-shell .link-preview-copy strong {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.graph-shell .link-preview-copy p {
+  margin-top: 3px;
+  color: #929db7;
+  font-size: 8px;
+}
+
 .graph-shell .note-content {
   width: 100%;
   height: 100%;

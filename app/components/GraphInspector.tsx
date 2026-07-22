@@ -68,7 +68,7 @@ function CommittedTextInput({ value, onCommit, normalize, focusOnMount = false, 
 
 type CommittedValueInputProps = {
   value: string;
-  type?: "text" | "number" | "date" | "datetime-local";
+  type?: "text" | "url" | "number" | "date" | "datetime-local";
   min?: string;
   max?: string;
   onCommit: (value: string) => void;
@@ -138,7 +138,7 @@ function TypedFieldInput({ field, value, onChange }: { field: CategoryField; val
   if (field.type === "datetime") {
     return <CommittedValueInput type="datetime-local" value={localDateTimeValue(value)} onCommit={(next) => onChange(next ? new Date(next).toISOString() : undefined)} />;
   }
-  return <CommittedValueInput value={typeof value === "string" ? value : ""} onCommit={(next) => onChange(next || undefined)} />;
+  return <CommittedValueInput type={field.key === "url" ? "url" : "text"} value={typeof value === "string" ? value : ""} onCommit={(next) => onChange(next || undefined)} />;
 }
 
 export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, focusNodeName = false, onNodeNameFocused }: Props) {

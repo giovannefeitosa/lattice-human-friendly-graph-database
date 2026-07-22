@@ -16,6 +16,9 @@ import {
   defaultGraph,
   graphToAiText,
   graphToCypher,
+  isLinkPreviewCategory,
+  LINK_PREVIEW_HEIGHT,
+  LINK_PREVIEW_WIDTH,
   NOTE_DEFAULT_HEIGHT,
   NOTE_DEFAULT_WIDTH,
   NOTE_MAX_HEIGHT,
@@ -26,6 +29,7 @@ import {
   type GraphData,
   type GraphEdge,
   type GraphNode,
+  type LinkPreviewCategoryId,
 } from "@/lib/graph";
 import {
   applyEditorHistoryEntry,
@@ -254,9 +258,9 @@ function curveGeometry(source: GraphNode, target: GraphNode) {
   const ny = dx / length;
   const bend = Math.min(62, length * 0.15);
   const boundaryDistance = (node: GraphNode, directionX: number, directionY: number) => {
-    if (node.categoryId !== "note") return NODE_RADIUS;
-    const halfWidth = (node.width ?? NOTE_DEFAULT_WIDTH) / 2;
-    const halfHeight = (node.height ?? NOTE_DEFAULT_HEIGHT) / 2;
+    if (node.categoryId !== "note" && !isLinkPreviewCategory(node.categoryId)) return NODE_RADIUS;
+    const halfWidth = node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : LINK_PREVIEW_WIDTH / 2;
+    const halfHeight = node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : LINK_PREVIEW_HEIGHT / 2;
     const horizontal = Math.abs(directionX) > 0.0001 ? halfWidth / Math.abs(directionX) : Number.POSITIVE_INFINITY;
     const vertical = Math.abs(directionY) > 0.0001 ? halfHeight / Math.abs(directionY) : Number.POSITIVE_INFINITY;
     return Math.min(horizontal, vertical);
@@ -345,6 +349,80 @@ function NoteContent({ content, editing, width, height, color, onChange, onBlur,
     className={`note-content${content ? "" : " empty"}`}
     style={sharedStyle}
   >{content || "Duplo clique para editar"}</div>;
+}
+
+type LinkPreviewData = {
+  url: string;
+  title: string;
+  description?: string;
+  imageUrl?: string;
+  siteName: string;
+};
+
+type LinkPreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; preview: LinkPreviewData }
+  | { status: "error" };
+
+const linkPreviewCache = new Map<string, LinkPreviewData>();
+
+function LinkPreviewCard({ node }: { node: GraphNode }) {
+  const url = typeof node.properties.url === "string" ? node.properties.url.trim() : "";
+  const categoryId = node.categoryId as LinkPreviewCategoryId;
+  const cacheKey = `${categoryId}:${url}`;
+  const [state, setState] = useState<LinkPreviewState>(() => {
+    const cached = linkPreviewCache.get(cacheKey);
+    return cached ? { status: "success", preview: cached } : { status: "idle" };
+  });
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+    if (!url) {
+      setState({ status: "idle" });
+      return;
+    }
+    const cached = linkPreviewCache.get(cacheKey);
+    if (cached) {
+      setState({ status: "success", preview: cached });
+      return;
+    }
+    const controller = new AbortController();
+    setState({ status: "loading" });
+    void fetch("/api/link-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, categoryId }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      const payload = await response.json() as { ok?: boolean; preview?: LinkPreviewData };
+      if (!response.ok || !payload.ok || !payload.preview) throw new Error();
+      linkPreviewCache.set(cacheKey, payload.preview);
+      setState({ status: "success", preview: payload.preview });
+    }).catch((error: unknown) => {
+      if ((error as Error).name !== "AbortError") setState({ status: "error" });
+    });
+    return () => controller.abort();
+  }, [cacheKey, categoryId, url]);
+
+  const icon = categoryId === "youtube-video" ? "▶" : "↗";
+  if (!url) return <div className="link-preview-card link-preview-empty"><span>{icon}</span><strong>Adicione uma URL</strong><small>Use o campo url no inspetor</small></div>;
+  if (state.status === "loading" || state.status === "idle") return <div className="link-preview-card link-preview-loading"><div /><i /><i /><i /></div>;
+  if (state.status === "error") return <div className="link-preview-card link-preview-error"><span>!</span><strong>Prévia indisponível</strong><small>{url}</small></div>;
+
+  const { preview } = state;
+  const showImage = Boolean(preview.imageUrl) && !imageFailed;
+  return <div className="link-preview-card link-preview-success">
+    <div className={`link-preview-media${showImage ? "" : " placeholder"}`}>
+      {showImage ? <img src={preview.imageUrl} alt="" loading="lazy" decoding="async" onError={() => setImageFailed(true)} /> : <span>{icon}</span>}
+    </div>
+    <div className="link-preview-copy">
+      <small>{preview.siteName}</small>
+      <strong>{preview.title || node.label}</strong>
+      {preview.description && <p>{preview.description}</p>}
+    </div>
+  </div>;
 }
 
 export default function GraphEditor() {
@@ -1735,8 +1813,8 @@ export default function GraphEditor() {
       setViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
-    const halfWidth = (node: GraphNode) => node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : NODE_RADIUS;
-    const halfHeight = (node: GraphNode) => node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : NODE_RADIUS;
+    const halfWidth = (node: GraphNode) => node.categoryId === "note" ? (node.width ?? NOTE_DEFAULT_WIDTH) / 2 : isLinkPreviewCategory(node.categoryId) ? LINK_PREVIEW_WIDTH / 2 : NODE_RADIUS;
+    const halfHeight = (node: GraphNode) => node.categoryId === "note" ? (node.height ?? NOTE_DEFAULT_HEIGHT) / 2 : isLinkPreviewCategory(node.categoryId) ? LINK_PREVIEW_HEIGHT / 2 : NODE_RADIUS;
     const minX = Math.min(...nodes.map((node) => node.x - halfWidth(node))) - 52;
     const maxX = Math.max(...nodes.map((node) => node.x + halfWidth(node))) + 52;
     const minY = Math.min(...nodes.map((node) => node.y - halfHeight(node))) - 52;
@@ -2025,7 +2103,7 @@ export default function GraphEditor() {
             </label>
             <div>
               <strong style={{ display: "block", marginBottom: 5, color: "#dce2f3", fontSize: 12 }}>Categorias personalizadas</strong>
-              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event e Note são categorias fixas e serão incluídas automaticamente.</small>
+              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event, Note, YouTube Video e HTTP URL são categorias fixas e serão incluídas automaticamente.</small>
             </div>
             {createCategoryNames.map((categoryName, index) => (
               <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2292,6 +2370,7 @@ export default function GraphEditor() {
                   const connectionCount = connectedNodeIds(graph, node.id).size;
                   const expanded = !collapsedNodes.has(node.id);
                   const isNote = node.categoryId === "note";
+                  const isLinkPreview = isLinkPreviewCategory(node.categoryId);
                   const noteWidth = node.width ?? NOTE_DEFAULT_WIDTH;
                   const noteHeight = node.height ?? NOTE_DEFAULT_HEIGHT;
                   const noteHalfWidth = noteWidth / 2;
@@ -2300,7 +2379,7 @@ export default function GraphEditor() {
                   return (
                     <g
                       key={node.id}
-                      className={`node${isNote ? " note-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
+                      className={`node${isNote ? " note-node" : ""}${isLinkPreview ? " link-preview-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
                       onPointerDown={(event) => { beginNodeDrag(event, node); beginNodeLongPress(event, node.id); }}
@@ -2381,6 +2460,15 @@ export default function GraphEditor() {
                           />
                           <path className="note-resize-mark" d={`M ${noteHalfWidth - 7} ${noteHalfHeight + 3} L ${noteHalfWidth + 3} ${noteHalfHeight - 7} M ${noteHalfWidth - 2} ${noteHalfHeight + 4} L ${noteHalfWidth + 4} ${noteHalfHeight - 2}`} />
                         </>}
+                      </> : isLinkPreview ? <>
+                        <ellipse cy={LINK_PREVIEW_HEIGHT / 2 + 13} rx={LINK_PREVIEW_WIDTH * .36} ry="16" fill="#000" opacity=".32" filter="url(#node-shadow)" />
+                        {selected && <rect x={-LINK_PREVIEW_WIDTH / 2 - 8} y={-LINK_PREVIEW_HEIGHT / 2 - 8} width={LINK_PREVIEW_WIDTH + 16} height={LINK_PREVIEW_HEIGHT + 16} rx="16" fill="none" stroke={node.color} strokeOpacity=".34" strokeWidth="8" filter="url(#node-glow)" />}
+                        <rect x={-LINK_PREVIEW_WIDTH / 2} y={-LINK_PREVIEW_HEIGHT / 2} width={LINK_PREVIEW_WIDTH} height={LINK_PREVIEW_HEIGHT} rx="12" fill="#101627" stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
+                        <foreignObject x={-LINK_PREVIEW_WIDTH / 2 + 2} y={-LINK_PREVIEW_HEIGHT / 2 + 2} width={LINK_PREVIEW_WIDTH - 4} height={LINK_PREVIEW_HEIGHT - 4}>
+                          <LinkPreviewCard node={node} />
+                        </foreignObject>
+                        <circle className="connection-port-hit" cx={LINK_PREVIEW_WIDTH / 2 + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
+                        <circle className="connection-port" cx={LINK_PREVIEW_WIDTH / 2 + 5} cy="0" r="9" />
                       </> : <>
                         <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
                         {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
@@ -2392,7 +2480,7 @@ export default function GraphEditor() {
                       </>}
                       {connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
-                        transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : "translate(38 -38)"}
+                        transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : isLinkPreview ? `translate(${LINK_PREVIEW_WIDTH / 2 - 10} ${-LINK_PREVIEW_HEIGHT / 2 + 10})` : "translate(38 -38)"}
                         role="button"
                         tabIndex={0}
                         aria-label={`${expanded ? "Ocultar" : "Expandir"} conexões de ${node.label}`}
@@ -2407,7 +2495,7 @@ export default function GraphEditor() {
                           }
                         }}
                       ><circle r="14" /><text textAnchor="middle" dominantBaseline="central">{expanded ? "−" : "+"}</text></g>}
-                      {!isNote && <>
+                      {!isNote && !isLinkPreview && <>
                         <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
                         <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
                       </>}

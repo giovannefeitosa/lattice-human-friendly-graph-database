@@ -139,7 +139,7 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
 
   assert.match(editor, /Criar novo grafo/);
   assert.match(editor, /Categorias personalizadas/);
-  assert.match(editor, /Concept, Person, Event e Note são categorias fixas/);
+  assert.match(editor, /Concept, Person, Event, Note, YouTube Video e HTTP URL são categorias fixas/);
   assert.match(editor, /graph-card-rename/);
   assert.match(editor, /Voltar para Biblioteca[\s\S]*← <span>Biblioteca<\/span>/);
   assert.match(editor, /aria-live="polite"/);
@@ -148,6 +148,24 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
   assert.match(categories, /Nome do grafo · Enter para salvar/);
   assert.match(categories, /"FIXA" : "PERSONALIZADA"/);
   assert.match(styles, /@media \(max-width: 1180px\)[\s\S]*\.graph-shell \.graph-name-input[\s\S]*display: block/);
+});
+
+test("renders link-preview nodes and exposes the authenticated metadata endpoint", async () => {
+  const [editor, styles, graph, previewRoute] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+    readFile(new URL("../lib/graph.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/link-preview/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(graph, /id: "youtube-video", name: "YouTube Video", color: "#ff0000"/);
+  assert.match(graph, /id: "http-url", name: "HTTP URL", color: "#38bdf8"/);
+  assert.match(graph, /LINK_PREVIEW_WIDTH = 240/);
+  assert.match(editor, /function LinkPreviewCard/);
+  assert.match(editor, /isLinkPreview \? <>/);
+  assert.match(editor, /Prévia indisponível/);
+  assert.match(styles, /\.link-preview-card/);
+  assert.match(previewRoute, /getChatGPTUser/);
+  assert.match(previewRoute, /export async function POST/);
 });
 
 test("renders resizable Notes with direct content editing", async () => {

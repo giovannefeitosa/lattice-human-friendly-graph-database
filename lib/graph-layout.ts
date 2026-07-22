@@ -37,6 +37,12 @@ const DEFAULT_LINK_DISTANCE = 220;
 const DEFAULT_COLLISION_RADIUS = 90;
 const DEFAULT_NOTE_WIDTH = 220;
 const DEFAULT_NOTE_HEIGHT = 160;
+const DEFAULT_LINK_PREVIEW_WIDTH = 240;
+const DEFAULT_LINK_PREVIEW_HEIGHT = 150;
+
+function isLinkPreviewCategory(categoryId: string) {
+  return categoryId === "youtube-video" || categoryId === "http-url";
+}
 
 function finiteOr(value: number | undefined, fallback: number) {
   return Number.isFinite(value) ? (value as number) : fallback;
@@ -158,8 +164,12 @@ export function layoutGraph(
       id: node.id,
       x: finiteOr(node.x, centerX + index * 8),
       y: finiteOr(node.y, centerY),
-      collisionRadius: options.collisionRadius === undefined && node.categoryId === "note"
-        ? Math.hypot((node.width ?? DEFAULT_NOTE_WIDTH) / 2, (node.height ?? DEFAULT_NOTE_HEIGHT) / 2) + 18
+      collisionRadius: options.collisionRadius === undefined
+        ? node.categoryId === "note"
+          ? Math.hypot((node.width ?? DEFAULT_NOTE_WIDTH) / 2, (node.height ?? DEFAULT_NOTE_HEIGHT) / 2) + 18
+          : isLinkPreviewCategory(node.categoryId)
+            ? Math.hypot(DEFAULT_LINK_PREVIEW_WIDTH / 2, DEFAULT_LINK_PREVIEW_HEIGHT / 2) + 18
+            : collisionRadius
         : collisionRadius,
     }));
   const simulationLinks: LayoutLink[] = graph.edges

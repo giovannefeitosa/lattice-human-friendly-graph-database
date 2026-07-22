@@ -67,8 +67,13 @@ export const NOTE_MIN_WIDTH = 140;
 export const NOTE_MIN_HEIGHT = 100;
 export const NOTE_MAX_WIDTH = 640;
 export const NOTE_MAX_HEIGHT = 480;
+export const LINK_PREVIEW_WIDTH = 240;
+export const LINK_PREVIEW_HEIGHT = 150;
 
-export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event", "note"] as const;
+export const LINK_PREVIEW_CATEGORY_IDS = ["youtube-video", "http-url"] as const;
+export type LinkPreviewCategoryId = (typeof LINK_PREVIEW_CATEGORY_IDS)[number];
+
+export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event", "note", ...LINK_PREVIEW_CATEGORY_IDS] as const;
 export type BuiltInCategoryId = (typeof BUILT_IN_CATEGORY_IDS)[number];
 
 const PERSON_FIELDS: CategoryField[] = [
@@ -88,15 +93,23 @@ const EVENT_FIELDS: CategoryField[] = [
   { key: "recordedTo", type: "datetime" },
 ];
 
+const URL_FIELDS: CategoryField[] = [{ key: "url", type: "text" }];
+
 export const BUILT_IN_CATEGORIES: ReadonlyArray<NodeCategory> = [
   { id: "concept", name: "Concept", color: "#f5f7ff", fields: [] },
   { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
   { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
   { id: "note", name: "Note", color: "#ffd166", fields: [] },
+  { id: "youtube-video", name: "YouTube Video", color: "#ff0000", fields: URL_FIELDS },
+  { id: "http-url", name: "HTTP URL", color: "#38bdf8", fields: URL_FIELDS },
 ];
 
 export function isBuiltInCategory(id: string): id is BuiltInCategoryId {
   return BUILT_IN_CATEGORY_IDS.includes(id as BuiltInCategoryId);
+}
+
+export function isLinkPreviewCategory(id: string): id is LinkPreviewCategoryId {
+  return LINK_PREVIEW_CATEGORY_IDS.includes(id as LinkPreviewCategoryId);
 }
 
 export const defaultGraph: GraphData = {
@@ -107,6 +120,8 @@ export const defaultGraph: GraphData = {
     { id: "person", name: "Person", color: "#34d399", fields: PERSON_FIELDS },
     { id: "event", name: "Event", color: "#f59e0b", fields: EVENT_FIELDS },
     { id: "note", name: "Note", color: "#ffd166", fields: [] },
+    { id: "youtube-video", name: "YouTube Video", color: "#ff0000", fields: URL_FIELDS },
+    { id: "http-url", name: "HTTP URL", color: "#38bdf8", fields: URL_FIELDS },
     { id: "brain-region", name: "BrainRegion", color: "#8ba6ff", fields: [] },
     { id: "trait", name: "Trait", color: "#ff8e8e", fields: [] },
   ],
@@ -342,6 +357,45 @@ function cloneFields(fields: ReadonlyArray<CategoryField>): CategoryField[] {
   return fields.map((field) => ({ ...field }));
 }
 
+function migrateLinkPreviewCategories(root: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(root.categories) || !Array.isArray(root.nodes)) return root;
+  const aliases = new Map<string, LinkPreviewCategoryId>();
+  let categories = [...root.categories];
+
+  for (const categoryId of LINK_PREVIEW_CATEGORY_IDS) {
+    const template = BUILT_IN_CATEGORIES.find((category) => category.id === categoryId)!;
+    const matches = categories.filter((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const category = value as Record<string, unknown>;
+      return category.id === categoryId
+        || (typeof category.name === "string" && categoryKey(category.name) === categoryKey(template.name));
+    });
+    if (!matches.length) continue;
+    const preferred = matches.find((value) => (value as Record<string, unknown>).id === categoryId) ?? matches[0];
+    for (const match of matches) {
+      const previousId = (match as Record<string, unknown>).id;
+      if (typeof previousId === "string") aliases.set(previousId, categoryId);
+    }
+    categories = categories.filter((value) => !matches.includes(value));
+    const previous = preferred as Record<string, unknown>;
+    categories.push({
+      id: template.id,
+      name: template.name,
+      color: previous.color ?? template.color,
+      fields: cloneFields(template.fields),
+    });
+  }
+
+  if (!aliases.size) return root;
+  const nodes = root.nodes.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const node = value as Record<string, unknown>;
+    const categoryId = typeof node.categoryId === "string" ? aliases.get(node.categoryId) : undefined;
+    return categoryId ? { ...node, categoryId } : value;
+  });
+  return { ...root, categories, nodes };
+}
+
 function normalizeCategories(root: Record<string, unknown>): NodeCategory[] {
   if (!Array.isArray(root.categories)) throw new GraphValidationError("graph.categories must be an array.");
   const parsed = root.categories.map((value, index): NodeCategory => {
@@ -375,6 +429,9 @@ function normalizeCategories(root: Record<string, unknown>): NodeCategory[] {
     }
     if (category.id === "event" && JSON.stringify(category.fields) !== JSON.stringify(EVENT_FIELDS)) {
       throw new GraphValidationError("Event fields must match the built-in schema.");
+    }
+    if (isLinkPreviewCategory(category.id) && JSON.stringify(category.fields) !== JSON.stringify(URL_FIELDS)) {
+      throw new GraphValidationError(`${category.name} fields must match the built-in schema.`);
     }
     normalized.push({ ...category, fields: cloneFields(category.fields) });
   }
@@ -462,7 +519,7 @@ export function normalizeGraph(input: unknown): GraphData {
     }
   }
 
-  const root = recordAt(parsed, "graph");
+  let root = recordAt(parsed, "graph");
   if (root.version !== 3) {
     throw new GraphValidationError("graph.version must be 3. Automatic migrations are not supported.");
   }
@@ -475,9 +532,10 @@ export function normalizeGraph(input: unknown): GraphData {
   if (!Array.isArray(root.edges)) {
     throw new GraphValidationError("graph.edges must be an array.");
   }
+  root = migrateLinkPreviewCategories(root);
 
   const categories = normalizeCategories(root);
-  const nodes = root.nodes.map((node, index) => normalizeNode(node, index, categories));
+  const nodes = (root.nodes as unknown[]).map((node, index) => normalizeNode(node, index, categories));
   const rawEdges = root.edges as unknown[];
   const edges = rawEdges.map(normalizeEdge);
   const nodeIds = new Set<string>();
@@ -538,7 +596,7 @@ export function normalizeGraph(input: unknown): GraphData {
 export const normalizeGraphData = normalizeGraph;
 
 export function categoryFieldsLocked(categoryId: string): boolean {
-  return categoryId === "concept" || categoryId === "event" || categoryId === "note";
+  return categoryId === "concept" || categoryId === "event" || categoryId === "note" || isLinkPreviewCategory(categoryId);
 }
 
 export function renameCategoryField(
