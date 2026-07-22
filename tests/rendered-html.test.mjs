@@ -80,6 +80,9 @@ test("includes persistent views, undo, smart guides, and AI export controls", as
   assert.match(styles, /\.smart-guides line/);
   assert.match(editor, /aria-label="View ativa"/);
   assert.match(editor, /Criar view/);
+  assert.match(editor, /ref=\{viewNameDialogRef\}/);
+  assert.match(editor, /viewNameDialogRef\.current\?\.showModal\(\)/);
+  assert.doesNotMatch(editor, /window\.prompt/);
   assert.match(editor, /Exportar para IA/);
   assert.match(editor, /Não incluir conexões/);
   assert.match(editor, /Copiar para IA/);

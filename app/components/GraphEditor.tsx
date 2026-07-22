@@ -367,6 +367,10 @@ export default function GraphEditor() {
   const [views, setViews] = useState<GraphView[]>([]);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [viewPositions, setViewPositions] = useState<PositionMap>({});
+  const [viewDialogMode, setViewDialogMode] = useState<"create" | "rename" | null>(null);
+  const [viewNameDraft, setViewNameDraft] = useState("");
+  const [viewNameError, setViewNameError] = useState("");
+  const [savingViewName, setSavingViewName] = useState(false);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [omitAiConnections, setOmitAiConnections] = useState(false);
   const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
@@ -405,6 +409,8 @@ export default function GraphEditor() {
   const createGraphNameRef = useRef<HTMLInputElement>(null);
   const renameGraphDialogRef = useRef<HTMLDialogElement>(null);
   const renameGraphNameRef = useRef<HTMLInputElement>(null);
+  const viewNameDialogRef = useRef<HTMLDialogElement>(null);
+  const viewNameInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const panHoldTimeoutRef = useRef<number | null>(null);
   const panHoldIntervalRef = useRef<number | null>(null);
@@ -677,10 +683,8 @@ export default function GraphEditor() {
     }
   }, [applyView, saveActiveView]);
 
-  const createGraphView = useCallback(async () => {
+  const createGraphView = useCallback(async (name: string) => {
     if (!graphId) return;
-    const name = window.prompt("Nome da nova view:", `View ${viewsRef.current.length + 1}`)?.trim();
-    if (!name) return;
     const current = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
     if (!current) return;
     setStatus("Criando view…");
@@ -696,17 +700,17 @@ export default function GraphEditor() {
       const created = normalizeGraphView(payload.view);
       setViews((items) => [...items, created]);
       applyView(created);
+      viewNameDialogRef.current?.close();
       setStatus(`View “${created.name}” criada`);
     } catch {
+      setViewNameError("Não foi possível criar a view. Use um nome diferente.");
       setStatus("Não foi possível criar a view");
     }
   }, [applyView, currentViewState, graphId, saveActiveView]);
 
-  const renameActiveView = useCallback(async () => {
+  const renameActiveView = useCallback(async (name: string) => {
     const view = viewsRef.current.find((item) => item.id === activeViewIdRef.current);
     if (!graphId || !view || view.isPrimary) return;
-    const name = window.prompt("Novo nome da view:", view.name)?.trim();
-    if (!name || name === view.name) return;
     try {
       const response = await fetch("/api/graphs/views", {
         method: "PUT",
@@ -717,11 +721,46 @@ export default function GraphEditor() {
       const payload = (await response.json()) as { view: GraphView };
       const renamed = normalizeGraphView(payload.view);
       setViews((items) => items.map((item) => item.id === renamed.id ? renamed : item));
+      viewNameDialogRef.current?.close();
       setStatus(`View renomeada para “${renamed.name}”`);
     } catch {
+      setViewNameError("Não foi possível renomear a view. Use um nome diferente.");
       setStatus("Não foi possível renomear a view");
     }
   }, [graphId]);
+
+  const openViewNameDialog = useCallback((mode: "create" | "rename") => {
+    const active = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+    if (mode === "rename" && (!active || active.isPrimary)) return;
+    setViewDialogMode(mode);
+    setViewNameDraft(mode === "create" ? `View ${viewsRef.current.length + 1}` : active?.name ?? "");
+    setViewNameError("");
+    setSavingViewName(false);
+    viewNameDialogRef.current?.showModal();
+    window.setTimeout(() => {
+      viewNameInputRef.current?.focus();
+      viewNameInputRef.current?.select();
+    }, 0);
+  }, []);
+
+  const submitViewName = useCallback(async () => {
+    const name = viewNameDraft.trim();
+    if (!name) {
+      setViewNameError("Informe o nome da view.");
+      viewNameInputRef.current?.focus();
+      return;
+    }
+    const current = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+    if (viewDialogMode === "rename" && current?.name === name) {
+      viewNameDialogRef.current?.close();
+      return;
+    }
+    setSavingViewName(true);
+    setViewNameError("");
+    if (viewDialogMode === "create") await createGraphView(name);
+    else if (viewDialogMode === "rename") await renameActiveView(name);
+    setSavingViewName(false);
+  }, [createGraphView, renameActiveView, viewDialogMode, viewNameDraft]);
 
   const deleteActiveView = useCallback(async () => {
     const view = viewsRef.current.find((item) => item.id === activeViewIdRef.current);
@@ -2099,8 +2138,8 @@ export default function GraphEditor() {
           >
             {views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
           </select>
-          <button type="button" onClick={() => void createGraphView()} aria-label="Criar view" title="Criar view">＋</button>
-          <button type="button" onClick={() => void renameActiveView()} disabled={!activeView || activeView.isPrimary} aria-label="Renomear view" title="Renomear view">✎</button>
+          <button type="button" onClick={() => openViewNameDialog("create")} aria-label="Criar view" title="Criar view">＋</button>
+          <button type="button" onClick={() => openViewNameDialog("rename")} disabled={!activeView || activeView.isPrimary} aria-label="Renomear view" title="Renomear view">✎</button>
           <button type="button" onClick={() => void deleteActiveView()} disabled={!activeView || activeView.isPrimary} aria-label="Excluir view" title="Excluir view">×</button>
         </div>
         <nav className="toolbar" aria-label="Ferramentas do grafo">
@@ -2441,6 +2480,48 @@ export default function GraphEditor() {
           onNodeNameFocused={() => setNodeNameFocusId(null)}
         />}
       </section>
+
+      <dialog
+        ref={viewNameDialogRef}
+        className="dialog"
+        aria-labelledby="view-name-dialog-title"
+        onClose={() => {
+          setViewDialogMode(null);
+          setViewNameError("");
+          setSavingViewName(false);
+        }}
+      >
+        <div className="dialog-header">
+          <h2 className="dialog-title" id="view-name-dialog-title">
+            {viewDialogMode === "rename" ? "Renomear view" : "Criar view"}
+          </h2>
+          <button className="icon-button" onClick={() => viewNameDialogRef.current?.close()} aria-label="Fechar">×</button>
+        </div>
+        <form
+          id="view-name-form"
+          className="dialog-body form-stack"
+          onSubmit={(event) => { event.preventDefault(); void submitViewName(); }}
+        >
+          <label>
+            Nome da view
+            <input
+              ref={viewNameInputRef}
+              value={viewNameDraft}
+              maxLength={120}
+              onChange={(event) => { setViewNameDraft(event.target.value); setViewNameError(""); }}
+              disabled={savingViewName}
+              aria-invalid={viewNameError ? "true" : undefined}
+            />
+          </label>
+          {viewNameError && <p className="error" role="alert">{viewNameError}</p>}
+        </form>
+        <div className="dialog-footer">
+          <button type="button" onClick={() => viewNameDialogRef.current?.close()} disabled={savingViewName}>Cancelar</button>
+          <button type="submit" form="view-name-form" className="primary" disabled={savingViewName}>
+            {savingViewName ? "Salvando…" : viewDialogMode === "rename" ? "Salvar nome" : "Criar view"}
+          </button>
+        </div>
+      </dialog>
 
       <dialog ref={transferDialogRef} className="dialog transfer-dialog" aria-labelledby="transfer-dialog-title">
         <div className="dialog-header">
