@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
-import { graphs } from "@/db/schema";
+import { graphs, graphViews } from "@/db/schema";
 import { GraphValidationError, normalizeGraph } from "@/lib/graph";
 import { graphContentHash, graphThumbnailSvg } from "@/lib/graph-thumbnail";
 
@@ -76,9 +76,9 @@ export async function POST(request: Request) {
       httpMetadata: { contentType: "image/svg+xml; charset=utf-8" },
     });
     const now = new Date().toISOString();
-    const [created] = await getDb()
-      .insert(graphs)
-      .values({
+    const db = getDb();
+    await db.batch([
+      db.insert(graphs).values({
         id,
         ownerEmail: owner,
         name,
@@ -87,8 +87,25 @@ export async function POST(request: Request) {
         thumbnailKey,
         createdAt: now,
         updatedAt: now,
-      })
-      .returning({ id: graphs.id, name: graphs.name, updatedAt: graphs.updatedAt });
+      }),
+      db.insert(graphViews).values({
+        id: crypto.randomUUID(),
+        graphId: id,
+        name: "Principal",
+        isPrimary: true,
+        positionsJson: JSON.stringify(Object.fromEntries(graph.nodes.map((node) => [
+          node.id,
+          { x: node.x, y: node.y, ...(node.z === undefined ? {} : { z: node.z }) },
+        ]))),
+        focusRootId: null,
+        collapsedNodeIdsJson: "[]",
+        pinnedNodeIdsJson: "[]",
+        viewportJson: JSON.stringify({ x: 360, y: 300, zoom: 1 }),
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ]);
+    const created = { id, name, updatedAt: now };
     return Response.json({ graph: created }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -154,7 +171,12 @@ export async function DELETE(request: Request) {
       .from(graphs)
       .where(and(eq(graphs.id, id), eq(graphs.ownerEmail, owner)))
       .limit(1);
-    await db.delete(graphs).where(and(eq(graphs.id, id), eq(graphs.ownerEmail, owner)));
+    if (existing) {
+      await db.batch([
+        db.delete(graphViews).where(eq(graphViews.graphId, id)),
+        db.delete(graphs).where(and(eq(graphs.id, id), eq(graphs.ownerEmail, owner))),
+      ]);
+    }
     if (existing) await env.THUMBNAILS.delete(existing.thumbnailKey);
     return new Response(null, { status: 204 });
   } catch (error) {

@@ -28,6 +28,7 @@ function CommittedTextInput({ value, onCommit, normalize, focusOnMount = false, 
   const [draft, setDraft] = useState(value);
   const [invalid, setInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cancelCommitRef = useRef(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDraft(value), 0);
@@ -44,6 +45,10 @@ function CommittedTextInput({ value, onCommit, normalize, focusOnMount = false, 
   }, [focusOnMount, onFocused]);
 
   const commit = () => {
+    if (cancelCommitRef.current) {
+      cancelCommitRef.current = false;
+      return;
+    }
     const next = normalize ? normalize(draft) : draft.trim();
     if (!next) {
       setInvalid(true);
@@ -55,9 +60,53 @@ function CommittedTextInput({ value, onCommit, normalize, focusOnMount = false, 
     if (next !== value) onCommit(next);
   };
 
-  return <input ref={inputRef} aria-invalid={invalid} value={draft} onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit} onKeyDown={(event) => {
+  return <input ref={inputRef} aria-invalid={invalid} value={draft} onFocus={() => { cancelCommitRef.current = false; }} onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit} onKeyDown={(event) => {
     if (event.key === "Enter") event.currentTarget.blur();
-    if (event.key === "Escape") { setDraft(value); setInvalid(false); event.currentTarget.blur(); }
+    if (event.key === "Escape") { cancelCommitRef.current = true; setDraft(value); setInvalid(false); event.currentTarget.blur(); }
+  }} />;
+}
+
+type CommittedValueInputProps = {
+  value: string;
+  type?: "text" | "number" | "date" | "datetime-local";
+  min?: string;
+  max?: string;
+  onCommit: (value: string) => void;
+};
+
+function CommittedValueInput({ value, type = "text", min, max, onCommit }: CommittedValueInputProps) {
+  const [draft, setDraft] = useState(value);
+  const cancelCommitRef = useRef(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDraft(value), 0);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
+  const commit = () => {
+    if (cancelCommitRef.current) {
+      cancelCommitRef.current = false;
+      return;
+    }
+    if (draft !== value) onCommit(draft);
+  };
+
+  return <input type={type} min={min} max={max} value={draft} onFocus={() => { cancelCommitRef.current = false; }} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => {
+    if (event.key === "Enter") event.currentTarget.blur();
+    if (event.key === "Escape") { cancelCommitRef.current = true; setDraft(value); event.currentTarget.blur(); }
+  }} />;
+}
+
+function CommittedTextarea({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDraft(value), 0);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
+  return <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => {
+    if (draft !== value) onCommit(draft);
   }} />;
 }
 
@@ -81,15 +130,15 @@ function TypedFieldInput({ field, value, onChange }: { field: CategoryField; val
     </select>;
   }
   if (field.type === "number") {
-    return <input type="number" value={typeof value === "number" ? value : ""} onChange={(event) => onChange(event.target.value === "" ? undefined : Number(event.target.value))} />;
+    return <CommittedValueInput type="number" value={typeof value === "number" ? String(value) : ""} onCommit={(next) => onChange(next === "" ? undefined : Number(next))} />;
   }
   if (field.type === "date") {
-    return <input type="date" value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || undefined)} />;
+    return <CommittedValueInput type="date" value={typeof value === "string" ? value : ""} onCommit={(next) => onChange(next || undefined)} />;
   }
   if (field.type === "datetime") {
-    return <input type="datetime-local" value={localDateTimeValue(value)} onChange={(event) => onChange(event.target.value ? new Date(event.target.value).toISOString() : undefined)} />;
+    return <CommittedValueInput type="datetime-local" value={localDateTimeValue(value)} onCommit={(next) => onChange(next ? new Date(next).toISOString() : undefined)} />;
   }
-  return <input value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || undefined)} />;
+  return <CommittedValueInput value={typeof value === "string" ? value : ""} onCommit={(next) => onChange(next || undefined)} />;
 }
 
 export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, focusNodeName = false, onNodeNameFocused }: Props) {
@@ -158,13 +207,13 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
         <span aria-hidden="true">▦</span>
         <span className="custom-tooltip tooltip-right" id="tooltip-manage-categories" role="tooltip"><strong>Gerenciar categorias</strong><span>Editar tipos e propriedades dos nós</span></span>
       </button>
-      <label>Profundidade<input type="number" min="-10" max="10" value={selectedNode.z || 0} onChange={(event) => updateSelectedNode({ z: Number(event.target.value) })} /></label>
+      <label>Profundidade<CommittedValueInput type="number" min="-10" max="10" value={String(selectedNode.z || 0)} onCommit={(value) => updateSelectedNode({ z: Number(value) })} /></label>
       {!!selectedCategory?.fields.length && <div className="typed-properties">
         <small>PROPRIEDADES DA CATEGORIA</small>
         {selectedCategory.fields.map((field) => <label key={field.key}>{field.key}<TypedFieldInput field={field} value={selectedNode.properties[field.key]} onChange={(value) => updateTypedProperty(field.key, value)} /></label>)}
       </div>}
       <label>Propriedades (JSON)<textarea ref={propertyRef} key={`node-properties-${selectedNode.id}-${JSON.stringify(selectedNode.properties)}`} spellCheck={false} defaultValue={JSON.stringify(asProperties(selectedNode.properties), null, 2)} onBlur={saveProperties} /></label>
-      <label>Content<textarea value={selectedNode.content || ""} onChange={(event) => updateSelectedNode({ content: event.target.value })} /></label>
+      <label>Content<CommittedTextarea value={selectedNode.content || ""} onCommit={(content) => updateSelectedNode({ content })} /></label>
       {propertyError && <p className="error">{propertyError}</p>}
       <button className="wide primary" onClick={saveProperties}>Aplicar propriedades</button>
     </div>}

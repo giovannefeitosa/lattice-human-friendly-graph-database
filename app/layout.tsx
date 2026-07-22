@@ -22,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const metadataBase = new URL(`${protocol}://${host}`);
   const title = "Lattice — Visual Knowledge Graph";
   const description =
-    "A spatial editor for mapping ideas, shaping relationships, and exporting valid Cypher.";
+    "A spatial graph editor with saved views, smart alignment, undo/redo, and AI-ready export.";
 
   return {
     metadataBase,
@@ -32,13 +32,13 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: [{ url: new URL("/og-note.png", metadataBase).toString() }],
+      images: [{ url: new URL("/og.png", metadataBase).toString() }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [new URL("/og-note.png", metadataBase).toString()],
+      images: [new URL("/og.png", metadataBase).toString()],
     },
   };
 }

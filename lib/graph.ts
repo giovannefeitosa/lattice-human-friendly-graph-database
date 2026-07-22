@@ -698,3 +698,62 @@ export function graphToCypher(input: GraphData | unknown): string {
 
   return `CREATE\n  ${patterns.join(",\n  ")};`;
 }
+
+export interface GraphToAiTextOptions {
+  includeConnections?: boolean;
+}
+
+function compareIds(left: { id: string }, right: { id: string }): number {
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, item]) => [key, stableJsonValue(item)]),
+  );
+}
+
+function compactStableJson(value: unknown): string {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+/** A deterministic, visual-metadata-free graph representation for LLM prompts. */
+export function graphToAiText(
+  input: GraphData | unknown,
+  options: GraphToAiTextOptions = {},
+): string {
+  const graph = normalizeGraph(input);
+  const includeConnections = options.includeConnections ?? true;
+  const title = graph.name?.replace(/\s+/g, " ").trim() || "Untitled graph";
+  const lines = [`# Graph: ${title}`, "", "## Nodes"];
+  for (const node of [...graph.nodes].sort(compareIds)) {
+    lines.push(compactStableJson({
+      id: node.id,
+      name: node.label,
+      type: node.type,
+      labels: node.labels ?? [],
+      content: node.content ?? "",
+      properties: node.properties,
+    }));
+  }
+  if (includeConnections) {
+    lines.push("", "## Connections");
+    for (const edge of [...graph.edges].sort(compareIds)) {
+      lines.push(compactStableJson({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: edge.type,
+        label: edge.label,
+        properties: edge.properties,
+        inhibitory: edge.inhibitory === true,
+        blocked: edge.blocked === true,
+      }));
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}

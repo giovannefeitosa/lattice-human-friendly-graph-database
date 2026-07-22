@@ -30,7 +30,7 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /Ou cole manualmente com Ctrl\+V/);
   assert.match(editor, /Importar texto/);
   assert.doesNotMatch(editor, /anchor\.download|URL\.createObjectURL/);
-  assert.match(inspector, /<label>Content<textarea/);
+  assert.match(inspector, /<label>Content<CommittedTextarea/);
   assert.match(editor, /CommittedTextInput/);
   assert.match(inspector, /Gerenciar categorias/);
   assert.match(inspector, /TypedFieldInput/);
@@ -47,12 +47,12 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /const GRID_SIZE = 24/);
   assert.match(editor, /Ctrl\/⌘ \+ D: duplicar nós/);
   assert.match(editor, /event\.key\.toLowerCase\(\) === "d"/);
-  assert.match(editor, /x: node\.x \+ GRID_SIZE/);
-  assert.match(editor, /y: node\.y \+ GRID_SIZE/);
+  assert.match(editor, /x: origin\.x \+ GRID_SIZE/);
+  assert.match(editor, /y: origin\.y \+ GRID_SIZE/);
   assert.match(editor, /setSelectedNodes\(new Set\(createdIds\)\)/);
   assert.match(editor, /label="Encaixar na grade"/);
   assert.match(editor, /active=\{snapToGrid\}/);
-  assert.match(editor, /snapPointToGrid\(position\)/);
+  assert.match(editor, /function snapPointToGrid/);
   assert.match(graph, /content\?: string/);
   assert.match(graph, /categories: NodeCategory\[\]/);
   assert.match(graph, /categoryId: string/);
@@ -62,6 +62,34 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "THUMBNAILS"/);
   assert.match(schema, /sqliteTable\(\s*"graphs"/);
+});
+
+test("includes persistent views, undo, smart guides, and AI export controls", async () => {
+  const [editor, styles, schema, viewsRoute] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/graphs/views/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(editor, /Ctrl\/⌘ \+ Z: desfazer/);
+  assert.match(editor, /Ctrl\/⌘ \+ Shift \+ Z: refazer/);
+  assert.match(editor, /event\.key\.toLowerCase\(\) === "z"/);
+  assert.match(editor, /tagName === "SELECT"/);
+  assert.match(editor, /calculateSmartGuides/);
+  assert.match(editor, /className="smart-guides"/);
+  assert.match(styles, /\.smart-guides line/);
+  assert.match(editor, /aria-label="View ativa"/);
+  assert.match(editor, /Criar view/);
+  assert.match(editor, /Exportar para IA/);
+  assert.match(editor, /Não incluir conexões/);
+  assert.match(editor, /Copiar para IA/);
+  assert.match(schema, /sqliteTable\(\s*"graph_views"/);
+  assert.match(viewsRoute, /export async function GET/);
+  assert.match(viewsRoute, /export async function POST/);
+  assert.match(viewsRoute, /export async function PUT/);
+  assert.match(viewsRoute, /export async function DELETE/);
+  assert.ok([...viewsRoute.matchAll(/await ownedGraphExists\(graphId, owner\)/g)].length >= 4);
+  assert.match(viewsRoute, /primary view cannot be deleted/i);
 });
 
 test("includes focused editing and integrated exploration behaviors", async () => {

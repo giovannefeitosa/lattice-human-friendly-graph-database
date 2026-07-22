@@ -14,6 +14,7 @@ import {
 } from "react";
 import {
   defaultGraph,
+  graphToAiText,
   graphToCypher,
   NOTE_DEFAULT_HEIGHT,
   NOTE_DEFAULT_WIDTH,
@@ -26,6 +27,17 @@ import {
   type GraphEdge,
   type GraphNode,
 } from "@/lib/graph";
+import {
+  applyEditorHistoryEntry,
+  createEditorHistoryEntry,
+  createHistoryState,
+  recordHistory,
+  redoHistory,
+  undoHistory,
+  type EditorHistoryEntry,
+  type HistoryState,
+} from "@/lib/editor-history";
+import { calculateSmartGuides, type SmartGuideLine } from "@/lib/graph-guides";
 import {
   connectedNodeIds,
   getHierarchicalVisibleNodeIds,
@@ -53,7 +65,21 @@ type GraphSummary = {
   createdAt: string;
   updatedAt: string;
 };
-type ExportPreview = { format: "JSON" | "Cypher"; contents: string };
+type ExportPreview = { format: "JSON" | "Cypher" | "IA"; contents: string };
+type PositionMap = Record<string, Point>;
+type GraphView = {
+  id: string;
+  graphId: string;
+  name: string;
+  isPrimary: boolean;
+  positions: PositionMap;
+  focusRootId: string | null;
+  collapsedNodeIds: string[];
+  pinnedNodeIds: string[];
+  viewport: Viewport;
+  createdAt: string;
+  updatedAt: string;
+};
 type InvalidGraph = { title: string; message: string; raw: string };
 type NodeContextMenuState = {
   nodeId: string;
@@ -91,8 +117,21 @@ type IconToolButtonProps = {
 
 type DragState =
   | { kind: "pan"; start: Point; origin: Point }
-  | { kind: "nodes"; start: Point; positions: Record<string, Point> }
-  | { kind: "note-resize"; nodeId: string; start: Point; width: number; height: number };
+  | {
+      kind: "nodes";
+      start: Point;
+      positions: PositionMap;
+      beforeNodes: GraphNode[];
+      beforeViewPositions: PositionMap;
+    }
+  | {
+      kind: "note-resize";
+      nodeId: string;
+      start: Point;
+      width: number;
+      height: number;
+      beforeNodes: GraphNode[];
+    };
 
 declare global {
   interface Window {
@@ -132,6 +171,19 @@ function snapPointToGrid(point: Point): Point {
 
 function graphWithTimestamp(graph: GraphData): GraphData {
   return { ...graph, updatedAt: new Date().toISOString() } as GraphData;
+}
+
+function normalizeGraphView(value: GraphView): GraphView {
+  return {
+    ...value,
+    positions: value.positions && typeof value.positions === "object" ? value.positions : {},
+    focusRootId: value.focusRootId || null,
+    collapsedNodeIds: Array.isArray(value.collapsedNodeIds) ? value.collapsedNodeIds : [],
+    pinnedNodeIds: Array.isArray(value.pinnedNodeIds) ? value.pinnedNodeIds : [],
+    viewport: value.viewport && Number.isFinite(value.viewport.zoom)
+      ? value.viewport
+      : { x: 360, y: 300, zoom: 1 },
+  };
 }
 
 function CommittedTextInput({ value, onCommit, ariaLabel, className, normalize }: CommittedTextInputProps) {
@@ -312,7 +364,11 @@ export default function GraphEditor() {
   const [renameGraphError, setRenameGraphError] = useState("");
   const [renamingGraph, setRenamingGraph] = useState(false);
   const [graphId, setGraphId] = useState<string | null>(null);
+  const [views, setViews] = useState<GraphView[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [viewPositions, setViewPositions] = useState<PositionMap>({});
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
+  const [omitAiConnections, setOmitAiConnections] = useState(false);
   const [invalidGraph, setInvalidGraph] = useState<InvalidGraph | null>(null);
   const [importError, setImportError] = useState("");
   const [importDraft, setImportDraft] = useState("");
@@ -334,6 +390,7 @@ export default function GraphEditor() {
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [smartGuides, setSmartGuides] = useState<SmartGuideLine[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -353,10 +410,22 @@ export default function GraphEditor() {
   const panHoldIntervalRef = useRef<number | null>(null);
   const panAnimationRef = useRef<number | null>(null);
   const viewportRef = useRef(viewport);
+  const viewsRef = useRef(views);
+  const activeViewIdRef = useRef(activeViewId);
+  const viewPositionsRef = useRef(viewPositions);
+  const focusRootIdRef = useRef(focusRootId);
+  const collapsedNodesRef = useRef(collapsedNodes);
+  const pinnedVisibleNodesRef = useRef(pinnedVisibleNodes);
+  const historyRef = useRef<HistoryState<EditorHistoryEntry>>(createHistoryState<EditorHistoryEntry>(100));
+  const historyApplyingRef = useRef(false);
   const touchPointsRef = useRef(new Map<number, Point>());
   const pinchRef = useRef<PinchState | null>(null);
   const longPressRef = useRef<LongPressState | null>(null);
   const noteEditCancelledRef = useRef(false);
+
+  const resetHistory = useCallback(() => {
+    historyRef.current = createHistoryState<EditorHistoryEntry>(100);
+  }, []);
 
   const cancelLongPress = useCallback(() => {
     if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
@@ -398,6 +467,13 @@ export default function GraphEditor() {
     viewportRef.current = viewport;
   }, [viewport]);
 
+  useEffect(() => { viewsRef.current = views; }, [views]);
+  useEffect(() => { activeViewIdRef.current = activeViewId; }, [activeViewId]);
+  useEffect(() => { viewPositionsRef.current = viewPositions; }, [viewPositions]);
+  useEffect(() => { focusRootIdRef.current = focusRootId; }, [focusRootId]);
+  useEffect(() => { collapsedNodesRef.current = collapsedNodes; }, [collapsedNodes]);
+  useEffect(() => { pinnedVisibleNodesRef.current = pinnedVisibleNodes; }, [pinnedVisibleNodes]);
+
   useEffect(() => {
     if (!nodeContextMenu) return;
     contextMenuButtonRef.current?.focus();
@@ -424,10 +500,22 @@ export default function GraphEditor() {
 
   useEffect(() => () => cancelLongPress(), [cancelLongPress]);
 
-  const commitGraph = useCallback((next: GraphData | ((current: GraphData) => GraphData)) => {
-    const value = typeof next === "function" ? next(graphRef.current) : next;
+  const commitGraph = useCallback((
+    next: GraphData | ((current: GraphData) => GraphData),
+    options: { history?: boolean } = {},
+  ) => {
+    const previous = graphRef.current;
+    const value = typeof next === "function" ? next(previous) : next;
     try {
       const normalized = graphWithTimestamp(normalizeGraph(value));
+      const entitiesChanged = JSON.stringify(previous.nodes) !== JSON.stringify(normalized.nodes)
+        || JSON.stringify(previous.edges) !== JSON.stringify(normalized.edges);
+      if (options.history !== false && !historyApplyingRef.current && entitiesChanged) {
+        historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+          { nodes: previous.nodes, edges: previous.edges },
+          { nodes: normalized.nodes, edges: normalized.edges },
+        ));
+      }
       graphRef.current = normalized;
       setGraph(normalized);
     } catch (error) {
@@ -438,6 +526,11 @@ export default function GraphEditor() {
       });
     }
   }, []);
+
+  const commitGraphWithoutHistory = useCallback((next: GraphData | ((current: GraphData) => GraphData)) => {
+    resetHistory();
+    commitGraph(next, { history: false });
+  }, [commitGraph, resetHistory]);
 
   const loadLibrary = useCallback(async () => {
     setLibraryStatus("Carregando grafos…");
@@ -468,15 +561,26 @@ export default function GraphEditor() {
       const parsed = JSON.parse(raw) as GraphData;
       raw = JSON.stringify(parsed, null, 2);
       const next = normalizeGraph({ ...parsed, name: payload.graph.name });
+      const viewsResponse = await fetch(`/api/graphs/views?graphId=${encodeURIComponent(payload.graph.id)}`);
+      if (!viewsResponse.ok) throw new Error("Não foi possível carregar as views.");
+      const viewsPayload = (await viewsResponse.json()) as { views: GraphView[] };
+      const nextViews = viewsPayload.views.map(normalizeGraphView);
+      const primaryView = nextViews.find((view) => view.isPrimary) ?? nextViews[0];
+      if (!primaryView) throw new Error("O grafo não possui uma view principal.");
       graphRef.current = next;
       setGraph(next);
       setGraphId(payload.graph.id);
+      setViews(nextViews);
+      setActiveViewId(primaryView.id);
+      setViewPositions(primaryView.isPrimary ? {} : primaryView.positions);
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
-      setFocusRootId(null);
-      setCollapsedNodes(new Set());
-      setPinnedVisibleNodes(new Set());
-      setViewport({ x: 360, y: 300, zoom: 1 });
+      setFocusRootId(primaryView.focusRootId);
+      setCollapsedNodes(new Set(primaryView.collapsedNodeIds));
+      setPinnedVisibleNodes(new Set(primaryView.pinnedNodeIds));
+      setViewport(primaryView.viewport);
+      setSmartGuides([]);
+      resetHistory();
       setStatus("Salvo");
       setScreen(target);
     } catch (error) {
@@ -491,7 +595,149 @@ export default function GraphEditor() {
         setLibraryStatus("Não foi possível abrir este grafo.");
       }
     }
+  }, [resetHistory]);
+
+  const currentViewState = useCallback((view: GraphView) => {
+    const knownNodeIds = new Set(graphRef.current.nodes.map((node) => node.id));
+    const activePositions = viewPositionsRef.current;
+    const positions = Object.fromEntries(graphRef.current.nodes.map((node) => {
+      const position = view.isPrimary ? node : (activePositions[node.id] ?? node);
+      return [node.id, { x: position.x, y: position.y }];
+    }));
+    return {
+      positions,
+      focusRootId: focusRootIdRef.current && knownNodeIds.has(focusRootIdRef.current)
+        ? focusRootIdRef.current
+        : null,
+      collapsedNodeIds: [...collapsedNodesRef.current].filter((id) => knownNodeIds.has(id)),
+      pinnedNodeIds: [...pinnedVisibleNodesRef.current].filter((id) => knownNodeIds.has(id)),
+      viewport: viewportRef.current,
+    };
   }, []);
+
+  const saveActiveView = useCallback(async () => {
+    const id = activeViewIdRef.current;
+    const currentGraphId = graphId;
+    const view = viewsRef.current.find((item) => item.id === id);
+    if (!currentGraphId || !view) return null;
+    const state = currentViewState(view);
+    const response = await fetch("/api/graphs/views", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: view.id, graphId: currentGraphId, state }),
+    });
+    if (!response.ok) throw new Error("Falha ao salvar a view.");
+    const payload = (await response.json()) as { view: GraphView };
+    const saved = normalizeGraphView(payload.view);
+    setViews((current) => current.map((item) => item.id === saved.id ? saved : item));
+    return saved;
+  }, [currentViewState, graphId]);
+
+  const applyView = useCallback((view: GraphView) => {
+    const knownNodeIds = new Set(graphRef.current.nodes.map((node) => node.id));
+    const positions = Object.fromEntries(
+      Object.entries(view.positions).filter(([id]) => knownNodeIds.has(id)),
+    );
+    const nextPositions = view.isPrimary ? {} : positions;
+    const nextFocusRootId = view.focusRootId && knownNodeIds.has(view.focusRootId) ? view.focusRootId : null;
+    const nextCollapsed = new Set(view.collapsedNodeIds.filter((id) => knownNodeIds.has(id)));
+    const nextPinned = new Set(view.pinnedNodeIds.filter((id) => knownNodeIds.has(id)));
+    activeViewIdRef.current = view.id;
+    viewPositionsRef.current = nextPositions;
+    focusRootIdRef.current = nextFocusRootId;
+    collapsedNodesRef.current = nextCollapsed;
+    pinnedVisibleNodesRef.current = nextPinned;
+    viewportRef.current = view.viewport;
+    setActiveViewId(view.id);
+    setViewPositions(nextPositions);
+    setFocusRootId(nextFocusRootId);
+    setCollapsedNodes(nextCollapsed);
+    setPinnedVisibleNodes(nextPinned);
+    setViewport(view.viewport);
+    setSelectedNodes(new Set());
+    setSelectedEdges(new Set());
+    setConnectSource(null);
+    setConnectMode(false);
+    setEditingNoteId(null);
+    setSmartGuides([]);
+    resetHistory();
+  }, [resetHistory]);
+
+  const switchGraphView = useCallback(async (viewId: string) => {
+    if (viewId === activeViewIdRef.current) return;
+    const target = viewsRef.current.find((view) => view.id === viewId);
+    if (!target) return;
+    setStatus("Salvando view…");
+    try {
+      await saveActiveView();
+      applyView(target);
+      setStatus(`View “${target.name}” carregada`);
+    } catch {
+      setStatus("Não foi possível trocar de view");
+    }
+  }, [applyView, saveActiveView]);
+
+  const createGraphView = useCallback(async () => {
+    if (!graphId) return;
+    const name = window.prompt("Nome da nova view:", `View ${viewsRef.current.length + 1}`)?.trim();
+    if (!name) return;
+    const current = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+    if (!current) return;
+    setStatus("Criando view…");
+    try {
+      await saveActiveView();
+      const response = await fetch("/api/graphs/views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graphId, name, state: currentViewState(current) }),
+      });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { view: GraphView };
+      const created = normalizeGraphView(payload.view);
+      setViews((items) => [...items, created]);
+      applyView(created);
+      setStatus(`View “${created.name}” criada`);
+    } catch {
+      setStatus("Não foi possível criar a view");
+    }
+  }, [applyView, currentViewState, graphId, saveActiveView]);
+
+  const renameActiveView = useCallback(async () => {
+    const view = viewsRef.current.find((item) => item.id === activeViewIdRef.current);
+    if (!graphId || !view || view.isPrimary) return;
+    const name = window.prompt("Novo nome da view:", view.name)?.trim();
+    if (!name || name === view.name) return;
+    try {
+      const response = await fetch("/api/graphs/views", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: view.id, graphId, name }),
+      });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { view: GraphView };
+      const renamed = normalizeGraphView(payload.view);
+      setViews((items) => items.map((item) => item.id === renamed.id ? renamed : item));
+      setStatus(`View renomeada para “${renamed.name}”`);
+    } catch {
+      setStatus("Não foi possível renomear a view");
+    }
+  }, [graphId]);
+
+  const deleteActiveView = useCallback(async () => {
+    const view = viewsRef.current.find((item) => item.id === activeViewIdRef.current);
+    const primary = viewsRef.current.find((item) => item.isPrimary);
+    if (!graphId || !view || view.isPrimary || !primary) return;
+    if (!window.confirm(`Excluir a view “${view.name}”?`)) return;
+    try {
+      const response = await fetch(`/api/graphs/views?id=${encodeURIComponent(view.id)}&graphId=${encodeURIComponent(graphId)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      setViews((items) => items.filter((item) => item.id !== view.id));
+      applyView(primary);
+      setStatus("View excluída");
+    } catch {
+      setStatus("Não foi possível excluir a view");
+    }
+  }, [applyView, graphId]);
 
   const openCreateGraphDialog = useCallback(() => {
     setLibraryNotice("");
@@ -631,6 +877,30 @@ export default function GraphEditor() {
   }, [graph, graphId, screen]);
 
   useEffect(() => {
+    if (screen !== "editor" || !graphId || !activeViewId) return;
+    const timer = window.setTimeout(async () => {
+      setStatus("Salvando view…");
+      try {
+        await saveActiveView();
+        setStatus("Salvo agora");
+      } catch {
+        setStatus("Erro ao salvar a view");
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeViewId,
+    collapsedNodes,
+    focusRootId,
+    graphId,
+    pinnedVisibleNodes,
+    saveActiveView,
+    screen,
+    viewPositions,
+    viewport,
+  ]);
+
+  useEffect(() => {
     const dialog = exportDialogRef.current;
     if (exportPreview && dialog && !dialog.open) dialog.showModal();
   }, [exportPreview]);
@@ -684,6 +954,10 @@ export default function GraphEditor() {
         properties: asProperties(partial.properties),
       } as GraphNode;
       commitGraph((current) => ({ ...current, nodes: [...current.nodes, node] }));
+      const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+      if (currentView && !currentView.isPrimary) {
+        setViewPositions((current) => ({ ...current, [id]: resolvedPosition }));
+      }
       if (focusRootId) {
         setPinnedVisibleNodes((current) => new Set(current).add(id));
       }
@@ -799,17 +1073,23 @@ export default function GraphEditor() {
   const duplicateSelection = useCallback(() => {
     if (canvasMode === "view" || !selectedNodes.size) return;
     const createdIds: string[] = [];
+    const createdPositions: PositionMap = {};
+    const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+    const activePositions = viewPositionsRef.current;
     commitGraph((current) => {
       const duplicates = current.nodes
         .filter((node) => selectedNodes.has(node.id))
         .map((node) => {
           const id = uid("node");
           createdIds.push(id);
+          const origin = currentView && !currentView.isPrimary ? (activePositions[node.id] ?? node) : node;
+          const position = { x: origin.x + GRID_SIZE, y: origin.y + GRID_SIZE };
+          createdPositions[id] = position;
           return {
             ...node,
             id,
-            x: node.x + GRID_SIZE,
-            y: node.y + GRID_SIZE,
+            x: position.x,
+            y: position.y,
             properties: { ...node.properties },
             ...(node.labels ? { labels: [...node.labels] } : {}),
           };
@@ -817,6 +1097,9 @@ export default function GraphEditor() {
       return { ...current, nodes: [...current.nodes, ...duplicates] };
     });
     if (!createdIds.length) return;
+    if (currentView && !currentView.isPrimary) {
+      setViewPositions((current) => ({ ...current, ...createdPositions }));
+    }
     setSelectedNodes(new Set(createdIds));
     setSelectedEdges(new Set());
     if (focusRootId) {
@@ -825,11 +1108,49 @@ export default function GraphEditor() {
     setStatus(createdIds.length === 1 ? "Nó duplicado" : `${createdIds.length} nós duplicados`);
   }, [canvasMode, commitGraph, focusRootId, selectedNodes]);
 
+  const applyHistory = useCallback((direction: "undo" | "redo") => {
+    const transition = direction === "undo"
+      ? undoHistory(historyRef.current)
+      : redoHistory(historyRef.current);
+    if (!transition.entry) return;
+    historyRef.current = transition.state;
+    const currentViewId = activeViewIdRef.current;
+    const positionMaps = currentViewId ? { [currentViewId]: viewPositionsRef.current } : {};
+    const applied = applyEditorHistoryEntry(graphRef.current, positionMaps, transition.entry, direction);
+    try {
+      historyApplyingRef.current = true;
+      const normalized = normalizeGraph(applied.graph);
+      graphRef.current = normalized;
+      setGraph(normalized);
+      if (currentViewId && applied.positionMaps[currentViewId]) {
+        viewPositionsRef.current = applied.positionMaps[currentViewId];
+        setViewPositions(applied.positionMaps[currentViewId]);
+      }
+      setSelectedNodes(new Set());
+      setSelectedEdges(new Set());
+      setSmartGuides([]);
+      setStatus(direction === "undo" ? "Ação desfeita" : "Ação refeita");
+    } finally {
+      historyApplyingRef.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const editing =
-        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isEditingElement = (element: HTMLElement | null) =>
+        element?.tagName === "INPUT"
+        || element?.tagName === "TEXTAREA"
+        || element?.tagName === "SELECT"
+        || Boolean(element?.isContentEditable);
+      const editing = isEditingElement(target) || isEditingElement(activeElement);
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === "z" && !editing && screen === "editor") {
+        event.preventDefault();
+        applyHistory(event.shiftKey ? "redo" : "undo");
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d" && !editing && screen === "editor") {
         event.preventDefault();
         duplicateSelection();
@@ -852,11 +1173,27 @@ export default function GraphEditor() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelection, duplicateSelection, screen]);
+  }, [applyHistory, deleteSelection, duplicateSelection, screen]);
 
+  const activeView = useMemo(
+    () => views.find((view) => view.id === activeViewId) ?? null,
+    [activeViewId, views],
+  );
+  const displayNodes = useMemo(
+    () => graph.nodes.map((node) => {
+      if (activeView?.isPrimary) return node;
+      const position = viewPositions[node.id];
+      return position ? { ...node, x: position.x, y: position.y } : node;
+    }),
+    [activeView?.isPrimary, graph.nodes, viewPositions],
+  );
+  const displayGraph = useMemo(
+    () => ({ ...graph, nodes: displayNodes }),
+    [displayNodes, graph],
+  );
   const nodeMap = useMemo(
-    () => new Map(graph.nodes.map((node) => [node.id, node])),
-    [graph.nodes],
+    () => new Map(displayNodes.map((node) => [node.id, node])),
+    [displayNodes],
   );
   const selectedNode =
     selectedNodes.size === 1 ? nodeMap.get([...selectedNodes][0]) || null : null;
@@ -881,8 +1218,8 @@ export default function GraphEditor() {
     [collapsedNodes, focusRootId, graph, pinnedVisibleNodes],
   );
   const visibleNodes = useMemo(
-    () => graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
-    [graph.nodes, visibleNodeIds],
+    () => displayNodes.filter((node) => visibleNodeIds.has(node.id)),
+    [displayNodes, visibleNodeIds],
   );
   const visibleEdges = useMemo(
     () => graph.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)),
@@ -920,15 +1257,21 @@ export default function GraphEditor() {
       press.fired = true;
       const drag = dragRef.current;
       if (drag?.kind === "nodes") {
-        setGraph((current) => ({
-          ...current,
-          nodes: current.nodes.map((node) => {
-            const origin = drag.positions[node.id];
-            return origin ? { ...node, x: origin.x, y: origin.y } : node;
-          }),
-        }));
+        const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+        if (currentView && !currentView.isPrimary) {
+          setViewPositions((current) => ({ ...current, ...drag.positions }));
+        } else {
+          setGraph((current) => ({
+            ...current,
+            nodes: current.nodes.map((node) => {
+              const origin = drag.positions[node.id];
+              return origin ? { ...node, x: origin.x, y: origin.y } : node;
+            }),
+          }));
+        }
       }
       dragRef.current = null;
+      setSmartGuides([]);
       openNodeContextMenu(nodeId, press.start.x, press.start.y, returnFocus);
     }, 500);
     longPressRef.current = press;
@@ -947,6 +1290,7 @@ export default function GraphEditor() {
     const localCenter = { x: center.x - rect.left, y: center.y - rect.top };
     const view = viewportRef.current;
     dragRef.current = null;
+    setSmartGuides([]);
     pinchRef.current = {
       ids: [first[0], second[0]],
       startDistance: Math.max(pointDistance(first[1], second[1]), 1),
@@ -1000,6 +1344,7 @@ export default function GraphEditor() {
     if (touchPointsRef.current.size < 2) pinchRef.current = null;
     if (finishedLongPress) {
       dragRef.current = null;
+      setSmartGuides([]);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       event.preventDefault();
       event.stopPropagation();
@@ -1007,6 +1352,7 @@ export default function GraphEditor() {
     }
     if (!wasPinching) return;
     dragRef.current = null;
+    setSmartGuides([]);
     event.preventDefault();
     event.stopPropagation();
   };
@@ -1035,6 +1381,7 @@ export default function GraphEditor() {
     event.stopPropagation();
     if (event.button !== 0) return;
     if (connectMode) return;
+    setSmartGuides([]);
     const nextSelection = new Set(selectedNodes);
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       if (nextSelection.has(node.id)) nextSelection.delete(node.id);
@@ -1047,17 +1394,24 @@ export default function GraphEditor() {
     setSelectedEdges(new Set());
     if (!nextSelection.has(node.id)) return;
     const positions: Record<string, Point> = {};
-    graph.nodes.forEach((candidate) => {
+    displayNodes.forEach((candidate) => {
       if (nextSelection.has(candidate.id)) positions[candidate.id] = { x: candidate.x, y: candidate.y };
     });
     svgRef.current?.setPointerCapture(event.pointerId);
-    dragRef.current = { kind: "nodes", start: screenToWorld(event.clientX, event.clientY), positions };
+    dragRef.current = {
+      kind: "nodes",
+      start: screenToWorld(event.clientX, event.clientY),
+      positions,
+      beforeNodes: graphRef.current.nodes,
+      beforeViewPositions: { ...viewPositionsRef.current },
+    };
   };
 
   const beginNoteResize = (event: ReactPointerEvent<SVGRectElement>, node: GraphNode) => {
     if (canvasMode === "view" || node.categoryId !== "note") return;
     event.preventDefault();
     event.stopPropagation();
+    setSmartGuides([]);
     setSelectedNodes(new Set([node.id]));
     setSelectedEdges(new Set());
     svgRef.current?.setPointerCapture(event.pointerId);
@@ -1067,6 +1421,7 @@ export default function GraphEditor() {
       start: screenToWorld(event.clientX, event.clientY),
       width: node.width ?? NOTE_DEFAULT_WIDTH,
       height: node.height ?? NOTE_DEFAULT_HEIGHT,
+      beforeNodes: graphRef.current.nodes,
     };
   };
 
@@ -1086,33 +1441,95 @@ export default function GraphEditor() {
       const point = screenToWorld(event.clientX, event.clientY);
       const width = clamp(drag.width + (point.x - drag.start.x) * 2, NOTE_MIN_WIDTH, NOTE_MAX_WIDTH);
       const height = clamp(drag.height + (point.y - drag.start.y) * 2, NOTE_MIN_HEIGHT, NOTE_MAX_HEIGHT);
-      setGraph((current) => ({
-        ...current,
-        nodes: current.nodes.map((node) => node.id === drag.nodeId ? { ...node, width, height } : node),
-      }));
+      setGraph((current) => {
+        const next = {
+          ...current,
+          nodes: current.nodes.map((node) => node.id === drag.nodeId ? { ...node, width, height } : node),
+        };
+        graphRef.current = next;
+        return next;
+      });
       return;
     }
     const point = screenToWorld(event.clientX, event.clientY);
     const dx = point.x - drag.start.x;
     const dy = point.y - drag.start.y;
-    setGraph((current) => ({
-      ...current,
-      nodes: current.nodes.map((node) => {
-        const origin = drag.positions[node.id];
-        if (!origin) return node;
-        const position = { x: origin.x + dx, y: origin.y + dy };
-        const nextPosition = snapToGrid ? snapPointToGrid(position) : position;
-        return { ...node, x: nextPosition.x, y: nextPosition.y };
-      }),
-    }));
+    let nextPositions: PositionMap;
+    if (snapToGrid) {
+      const guideResult = calculateSmartGuides({
+        nodes: displayNodes,
+        selectedIds: Object.keys(drag.positions),
+        positions: {
+          ...Object.fromEntries(displayNodes.map((node) => [node.id, { x: node.x, y: node.y }])),
+          ...drag.positions,
+        },
+        dx,
+        dy,
+        zoom: viewportRef.current.zoom,
+        gridSize: GRID_SIZE,
+        visibleNodeIds,
+      });
+      nextPositions = guideResult.positions;
+      setSmartGuides(guideResult.lines);
+    } else {
+      nextPositions = Object.fromEntries(Object.entries(drag.positions).map(([id, origin]) => [
+        id,
+        { x: origin.x + dx, y: origin.y + dy },
+      ])) as PositionMap;
+      setSmartGuides([]);
+    }
+    const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+    if (currentView && !currentView.isPrimary) {
+      setViewPositions((current) => {
+        const next = { ...current, ...nextPositions };
+        viewPositionsRef.current = next;
+        return next;
+      });
+    } else {
+      setGraph((current) => {
+        const next = {
+          ...current,
+          nodes: current.nodes.map((node) => {
+          const position = nextPositions[node.id];
+          return position ? { ...node, ...position } : node;
+          }),
+        };
+        graphRef.current = next;
+        return next;
+      });
+    }
   };
 
   const endPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (pinchRef.current) return;
-    if (dragRef.current?.kind === "nodes" || dragRef.current?.kind === "note-resize") {
-      commitGraph((current) => current);
+    const drag = dragRef.current;
+    if (drag?.kind === "nodes") {
+      const currentView = viewsRef.current.find((view) => view.id === activeViewIdRef.current);
+      if (currentView && !currentView.isPrimary) {
+        const afterPositions = viewPositionsRef.current;
+        if (JSON.stringify(drag.beforeViewPositions) !== JSON.stringify(afterPositions)) {
+          historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+            { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: drag.beforeViewPositions },
+            { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: afterPositions },
+            currentView.id,
+          ));
+        }
+      } else if (JSON.stringify(drag.beforeNodes) !== JSON.stringify(graphRef.current.nodes)) {
+        historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+          { nodes: drag.beforeNodes, edges: graphRef.current.edges },
+          { nodes: graphRef.current.nodes, edges: graphRef.current.edges },
+        ));
+        commitGraph((current) => current, { history: false });
+      }
+    } else if (drag?.kind === "note-resize" && JSON.stringify(drag.beforeNodes) !== JSON.stringify(graphRef.current.nodes)) {
+      historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+        { nodes: drag.beforeNodes, edges: graphRef.current.edges },
+        { nodes: graphRef.current.nodes, edges: graphRef.current.edges },
+      ));
+      commitGraph((current) => current, { history: false });
     }
     dragRef.current = null;
+    setSmartGuides([]);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -1300,7 +1717,7 @@ export default function GraphEditor() {
   const fitGraph = () => fitNodes(visibleNodes);
 
   const focusNodeAndConnections = (nodeId: string) => {
-    const node = graphRef.current.nodes.find((candidate) => candidate.id === nodeId);
+    const node = nodeMap.get(nodeId);
     if (!node) return;
     cancelLongPress();
     closeNodeContextMenu();
@@ -1333,19 +1750,39 @@ export default function GraphEditor() {
   const showAllNodesAndLayout = () => {
     cancelLongPress();
     closeNodeContextMenu();
-    const next = layoutGraph(graphRef.current);
+    const next = layoutGraph(displayGraph);
     setFocusRootId(null);
     setCollapsedNodes(new Set());
     setPinnedVisibleNodes(new Set());
     setConnectMode(false);
     setConnectSource(null);
-    commitGraph(next);
+    if (activeView && !activeView.isPrimary) {
+      const nextPositions = Object.fromEntries(next.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+      historyRef.current = recordHistory(historyRef.current, createEditorHistoryEntry(
+        { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: viewPositionsRef.current },
+        { nodes: graphRef.current.nodes, edges: graphRef.current.edges, positions: nextPositions },
+        activeView.id,
+      ));
+      viewPositionsRef.current = nextPositions;
+      setViewPositions(nextPositions);
+    } else {
+      commitGraph(next);
+    }
     setStatus("Todos os nós reorganizados");
     window.requestAnimationFrame(() => fitNodes(next.nodes));
   };
 
   const exportJson = () => setExportPreview({ format: "JSON", contents: JSON.stringify(graph, null, 2) });
   const exportCypher = () => setExportPreview({ format: "Cypher", contents: graphToCypher(graph) });
+  const exportAi = () => {
+    setOmitAiConnections(false);
+    setExportPreview({ format: "IA", contents: graphToAiText(graph, { includeConnections: true }) });
+  };
+
+  const toggleAiConnections = (omit: boolean) => {
+    setOmitAiConnections(omit);
+    setExportPreview({ format: "IA", contents: graphToAiText(graph, { includeConnections: !omit }) });
+  };
 
   const copyExport = async () => {
     if (!exportPreview) return;
@@ -1371,6 +1808,7 @@ export default function GraphEditor() {
     if (graphId) {
       setStatus("Salvando…");
       try {
+        await saveActiveView();
         const response = await fetch("/api/graphs", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1383,6 +1821,10 @@ export default function GraphEditor() {
       }
     }
     setGraphId(null);
+    setViews([]);
+    setActiveViewId(null);
+    setViewPositions({});
+    resetHistory();
     setScreen("library");
     await loadLibrary();
   };
@@ -1407,7 +1849,13 @@ export default function GraphEditor() {
 
   const importGraphText = (raw: string) => {
     try {
-      commitGraph(normalizeGraph(JSON.parse(raw)));
+      const imported = normalizeGraph(JSON.parse(raw));
+      resetHistory();
+      commitGraph(imported, { history: false });
+      const importedIds = new Set(imported.nodes.map((node) => node.id));
+      setViewPositions((current) => Object.fromEntries(
+        Object.entries(current).filter(([id]) => importedIds.has(id)),
+      ));
       setSelectedNodes(new Set());
       setSelectedEdges(new Set());
       setFocusRootId(null);
@@ -1463,7 +1911,9 @@ export default function GraphEditor() {
 
   const exportFromTransferDialog = (format: ExportPreview["format"]) => {
     transferDialogRef.current?.close();
-    if (format === "JSON") exportJson(); else exportCypher();
+    if (format === "JSON") exportJson();
+    else if (format === "Cypher") exportCypher();
+    else exportAi();
   };
 
   const invalidGraphModal = <dialog ref={invalidGraphDialogRef} className="dialog export-dialog invalid-graph-dialog" aria-labelledby="invalid-graph-title" onClose={() => setInvalidGraph(null)}>
@@ -1622,7 +2072,7 @@ export default function GraphEditor() {
       <CategoryManager
         graph={graph}
         status={status}
-        onCommit={commitGraph}
+        onCommit={commitGraphWithoutHistory}
         onBack={returnFromCategories}
         backDestination={categoryReturnScreen === "editor" ? "Editor" : "Biblioteca"}
       />
@@ -1641,6 +2091,18 @@ export default function GraphEditor() {
           <span><strong>LATTICE</strong><small>KNOWLEDGE GRAPH</small></span>
         </div>
         <CommittedTextInput className="graph-name-input" ariaLabel="Nome do grafo" value={graph.name || ""} onCommit={(name) => commitGraph((current) => ({ ...current, name }))} />
+        <div className="view-switcher" aria-label="Views do grafo">
+          <select
+            aria-label="View ativa"
+            value={activeViewId ?? ""}
+            onChange={(event) => void switchGraphView(event.target.value)}
+          >
+            {views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
+          </select>
+          <button type="button" onClick={() => void createGraphView()} aria-label="Criar view" title="Criar view">＋</button>
+          <button type="button" onClick={() => void renameActiveView()} disabled={!activeView || activeView.isPrimary} aria-label="Renomear view" title="Renomear view">✎</button>
+          <button type="button" onClick={() => void deleteActiveView()} disabled={!activeView || activeView.isPrimary} aria-label="Excluir view" title="Excluir view">×</button>
+        </div>
         <nav className="toolbar" aria-label="Ferramentas do grafo">
           <IconToolButton id="new-node" icon="＋" label="Novo nó" description="Adicionar um nó ao centro da tela" onClick={() => createNode()} disabled={canvasMode === "view"} />
           <IconToolButton id="categories" icon="▦" label="Categorias" description="Gerenciar categorias e propriedades" onClick={openCategoriesFromEditor} />
@@ -1650,7 +2112,7 @@ export default function GraphEditor() {
             icon="⌗"
             label="Encaixar na grade"
             description={snapToGrid ? "Desativar alinhamento de criação e movimento" : "Ativar alinhamento de criação e movimento"}
-            onClick={() => setSnapToGrid((enabled) => !enabled)}
+            onClick={() => { setSnapToGrid((enabled) => !enabled); setSmartGuides([]); }}
             active={snapToGrid}
           />
           <span className="divider" />
@@ -1687,6 +2149,8 @@ export default function GraphEditor() {
               <span>Shift + clique: multiseleção</span>
               <span>Ctrl/⌘ + A: selecionar tudo</span>
               <span>Ctrl/⌘ + D: duplicar nós</span>
+              <span>Ctrl/⌘ + Z: desfazer</span>
+              <span>Ctrl/⌘ + Shift + Z: refazer</span>
               <span>Delete: excluir</span>
             </div>
           )}
@@ -1738,6 +2202,11 @@ export default function GraphEditor() {
             <rect data-canvas="true" width="100%" height="100%" fill="#080b14" />
             <g transform={`scale(${viewport.zoom}) translate(${viewport.x} ${viewport.y})`}>
               <rect data-canvas="true" x={-5000} y={-5000} width={10000} height={10000} fill="url(#grid)" />
+              <g className="smart-guides" aria-hidden="true">
+                {smartGuides.map((guide, index) => guide.axis === "x"
+                  ? <line key={`${guide.axis}-${index}`} x1={guide.position} x2={guide.position} y1={guide.start - 24} y2={guide.end + 24} />
+                  : <line key={`${guide.axis}-${index}`} x1={guide.start - 24} x2={guide.end + 24} y1={guide.position} y2={guide.position} />)}
+              </g>
               <g aria-label="Conexões">
                 {visibleEdges.map((edge) => {
                   const source = nodeMap.get(edge.source);
@@ -1982,6 +2451,7 @@ export default function GraphEditor() {
           <button onClick={openImportFromTransferDialog} disabled={canvasMode === "view"}><span>⇧</span><strong>Importar</strong><small>Carregar um grafo em JSON</small></button>
           <button onClick={() => exportFromTransferDialog("JSON")}><span>{"{ }"}</span><strong>Exportar JSON</strong><small>Gerar os dados completos do grafo</small></button>
           <button onClick={() => exportFromTransferDialog("Cypher")}><span>Cy</span><strong>Exportar Cypher</strong><small>Gerar consultas para o Neo4j</small></button>
+          <button onClick={() => exportFromTransferDialog("IA")}><span>AI</span><strong>Exportar para IA</strong><small>Gerar texto pronto para outro LLM</small></button>
         </div>
       </dialog>
 
@@ -2007,10 +2477,20 @@ export default function GraphEditor() {
           <h2 className="dialog-title" id="export-dialog-title">Exportar {exportPreview?.format}</h2>
           <button className="icon-button" onClick={() => exportDialogRef.current?.close()} aria-label="Fechar">×</button>
         </div>
-        <div className="dialog-body"><pre className="export-code"><code>{exportPreview?.contents}</code></pre></div>
+        <div className="dialog-body">
+          {exportPreview?.format === "IA" && <label className="ai-export-option">
+            <input
+              type="checkbox"
+              checked={omitAiConnections}
+              onChange={(event) => toggleAiConnections(event.target.checked)}
+            />
+            Não incluir conexões
+          </label>}
+          <pre className="export-code"><code>{exportPreview?.contents}</code></pre>
+        </div>
         <div className="dialog-footer">
           <button onClick={() => exportDialogRef.current?.close()}>Fechar</button>
-          <button className="primary" onClick={() => void copyExport()}>Copiar</button>
+          <button className="primary" onClick={() => void copyExport()}>{exportPreview?.format === "IA" ? "Copiar para IA" : "Copiar"}</button>
         </div>
       </dialog>
       {invalidGraphModal}

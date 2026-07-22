@@ -3,6 +3,7 @@ import test from "node:test";
 
 const {
   GraphValidationError,
+  graphToAiText,
   graphToCypher,
   normalizeGraph,
   removeCategoryField,
@@ -167,4 +168,26 @@ test("allows at most one directed edge each way between two nodes", () => {
     nodes,
     edges: [edge("aa", "a", "a")],
   })), /two different nodes/);
+});
+
+test("exports deterministic AI text without visual metadata and optionally omits connections", () => {
+  const graph = normalizeGraph(emptyGraph({
+    name: "  Um\nargumento  ",
+    nodes: [
+      { id: "z", label: "Nota \"especial\"", categoryId: "note", content: "linha 1\nlinha 2", x: 99, y: 88, width: 640, height: 480, properties: { beta: 2, alpha: "á" } },
+      { id: "a", label: "Primeiro", categoryId: "concept", labels: ["Claim"], x: 0, y: 0, z: 9, properties: {} },
+    ],
+    edges: [{ id: "e", source: "a", target: "z", type: "SUPPORTS", label: "apoia", properties: { weight: 1 }, inhibitory: true, blocked: true }],
+  }));
+  const output = graphToAiText(graph);
+  assert.match(output, /^# Graph: Um argumento\n\n## Nodes\n/);
+  assert.ok(output.indexOf('"id":"a"') < output.indexOf('"id":"z"'));
+  assert.match(output, /"properties":\{"alpha":"á","beta":2\}/);
+  assert.match(output, /## Connections/);
+  assert.match(output, /"blocked":true/);
+  assert.doesNotMatch(output, /"(?:x|y|z|width|height|categoryId|color)":/);
+
+  const nodesOnly = graphToAiText(graph, { includeConnections: false });
+  assert.doesNotMatch(nodesOnly, /Connections|SUPPORTS|"source"|"target"/);
+  assert.equal(nodesOnly, graphToAiText({ ...graph, nodes: [...graph.nodes].reverse() }, { includeConnections: false }));
 });
