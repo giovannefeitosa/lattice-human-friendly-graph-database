@@ -1493,7 +1493,9 @@ export default function GraphEditor() {
 
   const beginPan = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (pinchRef.current) return;
+    if (dragRef.current?.kind === "nodes") return;
     if (event.button !== 0 && event.button !== 1) return;
+    if ((event.target as Element).closest?.("[data-node-id]")) return;
     if (event.target !== event.currentTarget && (event.target as SVGElement).dataset.canvas !== "true") return;
     closeNodeContextMenu();
     if (panAnimationRef.current !== null) window.cancelAnimationFrame(panAnimationRef.current);

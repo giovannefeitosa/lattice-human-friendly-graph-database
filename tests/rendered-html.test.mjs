@@ -49,6 +49,8 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /Ctrl \+ Alt \+ arraste: mover redes conectadas/);
   assert.match(editor, /event\.ctrlKey && event\.altKey/);
   assert.match(editor, /requestAnimationFrame/);
+  assert.match(editor, /dragRef\.current\?\.kind === "nodes"/);
+  assert.match(editor, /closest\?\.\("\[data-node-id\]"\)/);
   assert.match(editor, /event\.key\.toLowerCase\(\) === "d"/);
   assert.match(editor, /x: origin\.x \+ GRID_SIZE/);
   assert.match(editor, /y: origin\.y \+ GRID_SIZE/);
