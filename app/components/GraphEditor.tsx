@@ -43,8 +43,9 @@ import {
 } from "@/lib/editor-history";
 import { calculateSmartGuides, type SmartGuideLine } from "@/lib/graph-guides";
 import {
+  buildChildAdjacency,
   buildNodeAdjacency,
-  connectedComponentNodeIds,
+  descendantNodeIds,
   getHierarchicalVisibleNodeIds,
   layoutGraph,
 } from "@/lib/graph-layout";
@@ -1316,6 +1317,10 @@ export default function GraphEditor() {
     () => buildNodeAdjacency(graph),
     [graph],
   );
+  const childAdjacency = useMemo(
+    () => buildChildAdjacency(graph),
+    [graph],
+  );
   const displayNodes = useMemo(
     () => graph.nodes.map((node) => {
       const viewPosition = activeView?.isPrimary ? undefined : viewPositions[node.id];
@@ -1537,7 +1542,7 @@ export default function GraphEditor() {
     setSelectedEdges(new Set());
     if (!nextSelection.has(node.id)) return;
     const movedNodeIds = recursiveDrag
-      ? connectedComponentNodeIds(nodeAdjacency, nextSelection)
+      ? descendantNodeIds(childAdjacency, nextSelection)
       : nextSelection;
     const positions: Record<string, Point> = {};
     displayNodes.forEach((candidate) => {
@@ -2308,7 +2313,7 @@ export default function GraphEditor() {
               <strong>Atalhos</strong>
               <span>Duplo clique: novo nó</span>
               <span>Arraste: mover / navegar</span>
-              <span>Shift + arraste: mover redes conectadas</span>
+              <span>Shift + arraste: mover nó e filhos</span>
               <span>Scroll: zoom</span>
               <span>Ctrl/⌘ + clique: multiseleção</span>
               <span>Ctrl/⌘ + A: selecionar tudo</span>

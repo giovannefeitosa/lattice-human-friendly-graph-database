@@ -76,27 +76,54 @@ export function buildNodeAdjacency(graph: Pick<GraphData, "nodes" | "edges">): N
   return adjacency;
 }
 
-/** Returns the union of every undirected component reached from the roots. */
-export function connectedComponentNodeIds(
+/** Builds a source-to-target adjacency index for hierarchical descendants. */
+export function buildChildAdjacency(graph: Pick<GraphData, "nodes" | "edges">): NodeAdjacency {
+  const adjacency: NodeAdjacency = new Map(
+    graph.nodes.map((node) => [node.id, new Set<string>()]),
+  );
+  for (const edge of graph.edges) {
+    const children = adjacency.get(edge.source);
+    if (children && adjacency.has(edge.target)) children.add(edge.target);
+  }
+  return adjacency;
+}
+
+function reachableNodeIds(
   adjacency: ReadonlyMap<string, ReadonlySet<string>>,
   rootNodeIds: Iterable<string>,
 ): Set<string> {
-  const connected = new Set<string>();
+  const reached = new Set<string>();
   const queue: string[] = [];
   for (const nodeId of rootNodeIds) {
-    if (adjacency.has(nodeId) && !connected.has(nodeId)) {
-      connected.add(nodeId);
+    if (adjacency.has(nodeId) && !reached.has(nodeId)) {
+      reached.add(nodeId);
       queue.push(nodeId);
     }
   }
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     for (const nodeId of adjacency.get(queue[cursor]) ?? []) {
-      if (connected.has(nodeId)) continue;
-      connected.add(nodeId);
+      if (reached.has(nodeId)) continue;
+      reached.add(nodeId);
       queue.push(nodeId);
     }
   }
-  return connected;
+  return reached;
+}
+
+/** Returns the union of every undirected component reached from the roots. */
+export function connectedComponentNodeIds(
+  adjacency: ReadonlyMap<string, ReadonlySet<string>>,
+  rootNodeIds: Iterable<string>,
+): Set<string> {
+  return reachableNodeIds(adjacency, rootNodeIds);
+}
+
+/** Returns roots and every recursively reachable source-to-target child. */
+export function descendantNodeIds(
+  childAdjacency: ReadonlyMap<string, ReadonlySet<string>>,
+  rootNodeIds: Iterable<string>,
+): Set<string> {
+  return reachableNodeIds(childAdjacency, rootNodeIds);
 }
 
 /** Returns direct neighbours without considering edge direction. */

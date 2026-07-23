@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const {
+  buildChildAdjacency,
   buildNodeAdjacency,
   childNodeIds,
   connectedComponentNodeIds,
   connectedNodeIds,
+  descendantNodeIds,
   getHierarchicalVisibleNodeIds,
   layoutGraph,
 } = await import("../lib/graph-layout.ts");
@@ -56,6 +58,32 @@ test("unites undirected connected components from multiple roots without duplica
     ["a", "b", "c", "e", "f"],
   );
   assert.deepEqual([...connectedComponentNodeIds(adjacency, ["isolated"])], ["isolated"]);
+});
+
+test("moves only roots and recursively reachable outgoing descendants", () => {
+  const childAdjacency = buildChildAdjacency(graph);
+
+  assert.deepEqual([...descendantNodeIds(childAdjacency, ["b"])], ["b"]);
+  assert.deepEqual([...descendantNodeIds(childAdjacency, ["a"])].sort(), ["a", "b"]);
+  assert.deepEqual([...descendantNodeIds(childAdjacency, ["c"])].sort(), ["b", "c", "d"]);
+  assert.deepEqual([...descendantNodeIds(childAdjacency, ["a", "c"])].sort(), ["a", "b", "c", "d"]);
+});
+
+test("deduplicates cycles while traversing outgoing descendants", () => {
+  const cyclic = {
+    nodes: [node("a"), node("b"), node("c"), node("parent")],
+    edges: [
+      { id: "pa", source: "parent", target: "a" },
+      { id: "ab", source: "a", target: "b" },
+      { id: "bc", source: "b", target: "c" },
+      { id: "ca", source: "c", target: "a" },
+    ],
+  };
+
+  assert.deepEqual(
+    [...descendantNodeIds(buildChildAdjacency(cyclic), ["a"])].sort(),
+    ["a", "b", "c"],
+  );
 });
 
 test("traverses a cyclic graph with 10,000 nodes iteratively", () => {
