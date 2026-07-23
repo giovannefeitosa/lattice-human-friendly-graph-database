@@ -1518,7 +1518,7 @@ export default function GraphEditor() {
     if (event.button !== 0) return;
     if (connectMode) return;
     setSmartGuides([]);
-    const recursiveDrag = event.ctrlKey && event.shiftKey && !event.altKey;
+    const recursiveDrag = event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
     const nextSelection = new Set(selectedNodes);
     if (recursiveDrag) {
       event.preventDefault();
@@ -2308,9 +2308,9 @@ export default function GraphEditor() {
               <strong>Atalhos</strong>
               <span>Duplo clique: novo nó</span>
               <span>Arraste: mover / navegar</span>
-              <span>Ctrl + Shift + arraste: mover redes conectadas</span>
+              <span>Shift + arraste: mover redes conectadas</span>
               <span>Scroll: zoom</span>
-              <span>Shift + clique: multiseleção</span>
+              <span>Ctrl/⌘ + clique: multiseleção</span>
               <span>Ctrl/⌘ + A: selecionar tudo</span>
               <span>Ctrl/⌘ + D: duplicar nós</span>
               <span>Ctrl/⌘ + Z: desfazer</span>

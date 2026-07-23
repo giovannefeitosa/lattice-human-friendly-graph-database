@@ -46,8 +46,8 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /partial\.categoryId \?\? graph\.nodes\.at\(-1\)\?\.categoryId/);
   assert.match(editor, /const GRID_SIZE = 24/);
   assert.match(editor, /Ctrl\/⌘ \+ D: duplicar nós/);
-  assert.match(editor, /Ctrl \+ Shift \+ arraste: mover redes conectadas/);
-  assert.match(editor, /event\.ctrlKey && event\.shiftKey && !event\.altKey/);
+  assert.match(editor, /Shift \+ arraste: mover redes conectadas/);
+  assert.match(editor, /event\.shiftKey && !event\.ctrlKey && !event\.metaKey && !event\.altKey/);
   assert.match(editor, /requestAnimationFrame/);
   assert.match(editor, /dragRef\.current\?\.kind === "nodes"/);
   assert.match(editor, /closest\?\.\("\[data-node-id\]"\)/);
