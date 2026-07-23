@@ -49,7 +49,12 @@ const initialGraph: GraphData = {
   ...DEFAULT_GRAPH,
   name: "Lattice Lab",
   nodes: demoNodes,
-  edges: [],
+  edges: [
+    { id: "lab-person-concept", source: "lab-person", target: "lab-concept", type: "INSPIRES", label: "INSPIRES", properties: {} },
+    { id: "lab-note-concept", source: "lab-note", target: "lab-concept", type: "DOCUMENTS", label: "DOCUMENTS", properties: {} },
+    { id: "lab-concept-event", source: "lab-concept", target: "lab-event", type: "LEADS_TO", label: "LEADS_TO", properties: {} },
+    { id: "lab-concept-http", source: "lab-concept", target: "lab-http-url", type: "REFERENCES", label: "REFERENCES", properties: {} },
+  ],
 };
 
 function SphereNode({ node, category }: { node: GraphNode; category: NodeCategory }) {
@@ -222,7 +227,11 @@ export default function LatticeLab() {
                     selectedNode={inspectorNode}
                     onCommit={(next) => setGraph((current) => typeof next === "function" ? next(current) : next)}
                     onDelete={() => {
-                      setGraph((current) => ({ ...current, nodes: current.nodes.filter((node) => node.id !== inspectorNode.id) }));
+                      setGraph((current) => ({
+                        ...current,
+                        nodes: current.nodes.filter((node) => node.id !== inspectorNode.id),
+                        edges: current.edges.filter((edge) => edge.source !== inspectorNode.id && edge.target !== inspectorNode.id),
+                      }));
                     }}
                     onClose={() => setInspectorNodeId("")}
                     onManageCategories={() => setStory("node")}

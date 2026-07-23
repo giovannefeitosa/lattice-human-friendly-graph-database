@@ -34,6 +34,10 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(editor, /CommittedTextInput/);
   assert.match(inspector, /Gerenciar categorias/);
   assert.match(inspector, /TypedFieldInput/);
+  assert.match(inspector, /direction="parent"/);
+  assert.match(inspector, /direction="child"/);
+  assert.match(inspector, /Buscar por nome/);
+  assert.match(inspector, /removeInspectorConnection/);
   assert.match(categories, /properties[\s\S]*especial\/json/);
   assert.match(categories, /content[\s\S]*especial\/text/);
   assert.match(categories, /removeCustomCategory/);

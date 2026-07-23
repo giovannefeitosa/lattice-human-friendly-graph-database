@@ -110,3 +110,32 @@ test("records a connected multi-node move as one undoable action", () => {
   const undone = applyEditorHistoryEntry(graph, {}, transition.entry, "undo");
   assert.deepEqual(undone.graph.nodes.map(({ x }) => x), [0, 40, 80]);
 });
+
+test("undoes and redoes inspector connection add and removal actions", () => {
+  const nodes = [node("parent"), node("current")];
+  const edge = {
+    id: "parent-current",
+    source: "parent",
+    target: "current",
+    type: "RELATES_TO",
+    label: "RELATES_TO",
+    properties: {},
+  };
+  const addEntry = createEditorHistoryEntry(
+    { nodes, edges: [] },
+    { nodes, edges: [edge] },
+  );
+  const removeEntry = createEditorHistoryEntry(
+    { nodes, edges: [edge] },
+    { nodes, edges: [] },
+  );
+  const base = { version: 3, categories: [category], nodes, edges: [] };
+
+  const undoneAdd = applyEditorHistoryEntry({ ...base, edges: [edge] }, {}, addEntry, "undo");
+  assert.deepEqual(undoneAdd.graph.edges, []);
+  const redoneAdd = applyEditorHistoryEntry(undoneAdd.graph, {}, addEntry, "redo");
+  assert.deepEqual(redoneAdd.graph.edges, [edge]);
+
+  const undoneRemoval = applyEditorHistoryEntry(base, {}, removeEntry, "undo");
+  assert.deepEqual(undoneRemoval.graph.edges, [edge]);
+});

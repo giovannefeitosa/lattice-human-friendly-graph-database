@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CategoryField, GraphData, GraphEdge, GraphNode, GraphValue } from "@/lib/graph";
+import {
+  addInspectorConnection,
+  inspectorConnectionCandidates,
+  inspectorConnections,
+  removeInspectorConnection,
+  type InspectorConnectionDirection,
+} from "@/lib/inspector-connections";
 
 type GraphUpdate = GraphData | ((current: GraphData) => GraphData);
 type Props = {
@@ -141,6 +148,135 @@ function TypedFieldInput({ field, value, onChange }: { field: CategoryField; val
   return <CommittedValueInput type={field.key === "url" ? "url" : "text"} value={typeof value === "string" ? value : ""} onCommit={(next) => onChange(next || undefined)} />;
 }
 
+function connectionId() {
+  return `edge_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function InspectorConnections({
+  graph,
+  selectedNode,
+  direction,
+  onCommit,
+}: {
+  graph: GraphData;
+  selectedNode: GraphNode;
+  direction: InspectorConnectionDirection;
+  onCommit: (next: GraphUpdate) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const title = direction === "parent" ? "Pais" : "Filhos";
+  const singular = direction === "parent" ? "pai" : "filho";
+  const listId = `inspector-${direction}-results`;
+  const currentConnections = useMemo(
+    () => inspectorConnections(graph, selectedNode.id, direction),
+    [direction, graph, selectedNode.id],
+  );
+  const candidates = useMemo(
+    () => inspectorConnectionCandidates(graph, selectedNode.id, direction, query),
+    [direction, graph, query, selectedNode.id],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
+
+  const closePicker = (restoreFocus = true) => {
+    setOpen(false);
+    setQuery("");
+    setActiveIndex(0);
+    if (restoreFocus) window.requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  const addConnection = (candidateId: string) => {
+    onCommit((current) =>
+      addInspectorConnection(current, selectedNode.id, candidateId, direction, connectionId()));
+    closePicker();
+  };
+
+  return <section className="inspector-connections" aria-labelledby={`${listId}-title`}>
+    <div className="inspector-connections-heading">
+      <span id={`${listId}-title`}>{title}</span>
+      <small>{currentConnections.length}</small>
+    </div>
+    {currentConnections.length ? <div className="inspector-connection-list">
+      {currentConnections.map(({ edge, node }) => <div className="inspector-connection" key={edge.id}>
+        <i style={{ background: node.color }} />
+        <span><strong>{node.label}</strong><small>{edge.type}</small></span>
+        <button
+          type="button"
+          onClick={() => onCommit((current) => removeInspectorConnection(current, edge.id))}
+          aria-label={`Remover ${singular} ${node.label}`}
+        >×</button>
+      </div>)}
+    </div> : <p className="inspector-connections-empty">Nenhum {singular} conectado.</p>}
+    <button
+      ref={triggerRef}
+      type="button"
+      className="inspector-connection-add"
+      aria-expanded={open}
+      aria-controls={open ? listId : undefined}
+      onClick={() => open ? closePicker() : setOpen(true)}
+    >＋ Adicionar {singular}</button>
+    {open && <div className="inspector-connection-picker">
+      <input
+        ref={inputRef}
+        role="combobox"
+        aria-label={`Buscar node para adicionar como ${singular}`}
+        aria-expanded="true"
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-activedescendant={candidates[activeIndex] ? `${listId}-option-${activeIndex}` : undefined}
+        placeholder="Buscar por nome…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (candidates.length) setActiveIndex((current) => Math.min(current + 1, candidates.length - 1));
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActiveIndex((current) => Math.max(current - 1, 0));
+          } else if (event.key === "Enter" && candidates[activeIndex]) {
+            event.preventDefault();
+            addConnection(candidates[activeIndex].id);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            closePicker();
+          }
+        }}
+      />
+      <div className="inspector-connection-results" id={listId} role="listbox">
+        {candidates.map((node, index) => {
+          const category = graph.categories.find((item) => item.id === node.categoryId);
+          return <button
+            type="button"
+            role="option"
+            id={`${listId}-option-${index}`}
+            aria-selected={index === activeIndex}
+            className={index === activeIndex ? "active" : ""}
+            key={node.id}
+            onMouseEnter={() => setActiveIndex(index)}
+            onClick={() => addConnection(node.id)}
+          >
+            <i style={{ background: node.color }} />
+            <span><strong>{node.label}</strong><small>{category?.name ?? node.categoryId} · {node.id}</small></span>
+          </button>;
+        })}
+        {!candidates.length && <p>Nenhum node encontrado.</p>}
+      </div>
+    </div>}
+  </section>;
+}
+
 export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, focusNodeName = false, onNodeNameFocused }: Props) {
   const [propertyError, setPropertyError] = useState("");
   const propertyRef = useRef<HTMLTextAreaElement>(null);
@@ -207,6 +343,8 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
         <span aria-hidden="true">▦</span>
         <span className="custom-tooltip tooltip-right" id="tooltip-manage-categories" role="tooltip"><strong>Gerenciar categorias</strong><span>Editar tipos e propriedades dos nós</span></span>
       </button>
+      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="parent" onCommit={onCommit} />
+      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="child" onCommit={onCommit} />
       <label>Profundidade<CommittedValueInput type="number" min="-10" max="10" value={String(selectedNode.z || 0)} onCommit={(value) => updateSelectedNode({ z: Number(value) })} /></label>
       {!!selectedCategory?.fields.length && <div className="typed-properties">
         <small>PROPRIEDADES DA CATEGORIA</small>
