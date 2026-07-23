@@ -1322,6 +1322,17 @@ export default function GraphEditor() {
     () => buildChildAdjacency(graph),
     [graph],
   );
+  const directionalConnectionCounts = useMemo(() => {
+    const parents = new Map(graph.nodes.map((node) => [node.id, 0]));
+    const children = new Map(graph.nodes.map((node) => [node.id, 0]));
+    for (const edge of graph.edges) {
+      if (children.has(edge.source) && parents.has(edge.target)) {
+        children.set(edge.source, (children.get(edge.source) ?? 0) + 1);
+        parents.set(edge.target, (parents.get(edge.target) ?? 0) + 1);
+      }
+    }
+    return { parents, children };
+  }, [graph.edges, graph.nodes]);
   const displayNodes = useMemo(
     () => graph.nodes.map((node) => {
       const viewPosition = activeView?.isPrimary ? undefined : viewPositions[node.id];
@@ -2481,6 +2492,8 @@ export default function GraphEditor() {
                   const depth = clamp(Number(node.z || 0), -10, 10);
                   const scale = 1 + depth * 0.018;
                   const connectionCount = nodeAdjacency.get(node.id)?.size ?? 0;
+                  const parentCount = directionalConnectionCounts.parents.get(node.id) ?? 0;
+                  const childCount = directionalConnectionCounts.children.get(node.id) ?? 0;
                   const expanded = !collapsedNodes.has(node.id);
                    const isNote = node.categoryId === "note";
                    const isLinkPreview = isLinkPreviewCategory(node.categoryId);
@@ -2527,7 +2540,7 @@ export default function GraphEditor() {
                       role="button"
                       tabIndex={0}
                       aria-haspopup="menu"
-                      aria-label={isNote ? `Nota: ${node.content || "vazia"}` : `${node.label}, tipo ${node.type}`}
+                      aria-label={`${isNote ? `Nota: ${node.content || "vazia"}` : `${node.label}, tipo ${node.type}`}. ${parentCount} ${parentCount === 1 ? "pai" : "pais"} e ${childCount} ${childCount === 1 ? "filho" : "filhos"}.`}
                     >
                       {isNote ? <>
                         <ellipse cy={noteHalfHeight + 13} rx={Math.max(54, noteWidth * .38)} ry="16" fill="#000" opacity=".3" filter="url(#node-shadow)" />
@@ -2594,6 +2607,45 @@ export default function GraphEditor() {
                         <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                         <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
                       </>}
+                      {[
+                        {
+                          kind: "parents",
+                          count: parentCount,
+                          arrow: "↑",
+                          label: parentCount === 1 ? "1 pai" : `${parentCount} pais`,
+                          transform: isNote
+                            ? `translate(${-noteHalfWidth + 7} ${-noteHalfHeight + 7})`
+                            : isLinkPreview
+                              ? `translate(${-LINK_PREVIEW_WIDTH / 2 + 7} ${-LINK_PREVIEW_HEIGHT / 2 + 7})`
+                              : `translate(${-NODE_RADIUS + 8} ${-NODE_RADIUS + 8})`,
+                        },
+                        {
+                          kind: "children",
+                          count: childCount,
+                          arrow: "↓",
+                          label: childCount === 1 ? "1 filho" : `${childCount} filhos`,
+                          transform: isNote
+                            ? `translate(${noteHalfWidth - 7} ${noteHalfHeight - 7})`
+                            : isLinkPreview
+                              ? `translate(${LINK_PREVIEW_WIDTH / 2 - 7} ${LINK_PREVIEW_HEIGHT / 2 - 7})`
+                              : `translate(${NODE_RADIUS - 8} ${NODE_RADIUS - 8})`,
+                        },
+                      ].map((indicator) => {
+                        const width = Math.max(36, 25 + String(indicator.count).length * 7);
+                        return (
+                          <g
+                            key={indicator.kind}
+                            className={`node-connection-indicator ${indicator.kind}${indicator.count === 0 ? " empty" : ""}`}
+                            transform={indicator.transform}
+                            aria-label={indicator.label}
+                          >
+                            <title>{indicator.label}</title>
+                            <rect x={-width / 2} y="-10" width={width} height="20" rx="10" />
+                            <text className="indicator-arrow" x={-width / 2 + 10} textAnchor="middle" dominantBaseline="central">{indicator.arrow}</text>
+                            <text className="indicator-count" x={width / 2 - 10} textAnchor="middle" dominantBaseline="central">{indicator.count}</text>
+                          </g>
+                        );
+                      })}
                       {connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
                         transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : isLinkPreview ? `translate(${LINK_PREVIEW_WIDTH / 2 - 10} ${-LINK_PREVIEW_HEIGHT / 2 + 10})` : "translate(38 -38)"}

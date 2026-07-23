@@ -131,6 +131,12 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.match(editor, /transfer-dialog[\s\S]*Importar[\s\S]*Exportar JSON[\s\S]*Exportar Cypher/);
   assert.doesNotMatch(editor, /id="delete-selection"/);
   assert.match(editor, /\{connectionCount > 0 && <g/);
+  assert.match(editor, /directionalConnectionCounts/);
+  assert.match(editor, /node-connection-indicator/);
+  assert.match(editor, /parentCount === 1 \? "1 pai"/);
+  assert.match(editor, /childCount === 1 \? "1 filho"/);
+  assert.match(styles, /\.node-connection-indicator\.parents rect/);
+  assert.match(styles, /\.node-connection-indicator\.children rect/);
   assert.match(editor, /getHierarchicalVisibleNodeIds/);
   assert.match(editor, /const expanded = !collapsedNodes\.has\(node\.id\)/);
   assert.match(editor, /Filhos contraídos/);

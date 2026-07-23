@@ -1975,6 +1975,52 @@ pre.export-code {
   fill: #fff;
 }
 
+.graph-shell .node-connection-indicator {
+  pointer-events: none;
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, .62));
+}
+
+.graph-shell .node-connection-indicator rect {
+  fill: rgba(12, 18, 34, .96);
+  stroke-width: 1.5;
+}
+
+.graph-shell .node-connection-indicator.parents rect {
+  stroke: #8aa5ff;
+}
+
+.graph-shell .node-connection-indicator.children rect {
+  stroke: #a98cff;
+}
+
+.graph-shell .node-connection-indicator text {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.graph-shell .node-connection-indicator.parents .indicator-arrow {
+  fill: #9db3ff;
+}
+
+.graph-shell .node-connection-indicator.children .indicator-arrow {
+  fill: #bca5ff;
+}
+
+.graph-shell .node-connection-indicator .indicator-count {
+  fill: #f7f8ff;
+}
+
+.graph-shell .node-connection-indicator.empty {
+  opacity: .46;
+  filter: none;
+}
+
+.graph-shell .node.selected .node-connection-indicator:not(.empty) rect {
+  stroke: #fff;
+}
+
 .graph-shell .subgraph-node .subgraph-secondary {
   fill: #9b6ee8;
   opacity: .46;
