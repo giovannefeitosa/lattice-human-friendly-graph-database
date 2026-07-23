@@ -19,6 +19,7 @@ type Props = {
   onDelete: () => void;
   onClose: () => void;
   onManageCategories: () => void;
+  onNavigateNode: (nodeId: string) => void;
   focusNodeName?: boolean;
   onNodeNameFocused?: () => void;
 };
@@ -157,11 +158,13 @@ function InspectorConnections({
   selectedNode,
   direction,
   onCommit,
+  onNavigateNode,
 }: {
   graph: GraphData;
   selectedNode: GraphNode;
   direction: InspectorConnectionDirection;
   onCommit: (next: GraphUpdate) => void;
+  onNavigateNode: (nodeId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -211,11 +214,20 @@ function InspectorConnections({
       {currentConnections.map(({ edge, node }) => <div className="inspector-connection" key={edge.id}>
         <i style={{ background: node.color }} />
         <span><strong>{node.label}</strong><small>{edge.type}</small></span>
-        <button
-          type="button"
-          onClick={() => onCommit((current) => removeInspectorConnection(current, edge.id))}
-          aria-label={`Remover ${singular} ${node.label}`}
-        >×</button>
+        <div className="inspector-connection-actions">
+          <button
+            type="button"
+            onClick={() => onNavigateNode(node.id)}
+            aria-label={`Ir para ${node.label}`}
+            title={`Ir para ${node.label}`}
+          >↗</button>
+          <button
+            type="button"
+            onClick={() => onCommit((current) => removeInspectorConnection(current, edge.id))}
+            aria-label={`Remover ${singular} ${node.label}`}
+            title={`Remover conexão com ${node.label}`}
+          >×</button>
+        </div>
       </div>)}
     </div> : <p className="inspector-connections-empty">Nenhum {singular} conectado.</p>}
     <button
@@ -277,7 +289,7 @@ function InspectorConnections({
   </section>;
 }
 
-export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, focusNodeName = false, onNodeNameFocused }: Props) {
+export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, onNavigateNode, focusNodeName = false, onNodeNameFocused }: Props) {
   const [propertyError, setPropertyError] = useState("");
   const propertyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -343,8 +355,8 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
         <span aria-hidden="true">▦</span>
         <span className="custom-tooltip tooltip-right" id="tooltip-manage-categories" role="tooltip"><strong>Gerenciar categorias</strong><span>Editar tipos e propriedades dos nós</span></span>
       </button>
-      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="parent" onCommit={onCommit} />
-      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="child" onCommit={onCommit} />
+      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="parent" onCommit={onCommit} onNavigateNode={onNavigateNode} />
+      <InspectorConnections graph={graph} selectedNode={selectedNode} direction="child" onCommit={onCommit} onNavigateNode={onNavigateNode} />
       <label>Profundidade<CommittedValueInput type="number" min="-10" max="10" value={String(selectedNode.z || 0)} onCommit={(value) => updateSelectedNode({ z: Number(value) })} /></label>
       {!!selectedCategory?.fields.length && <div className="typed-properties">
         <small>PROPRIEDADES DA CATEGORIA</small>

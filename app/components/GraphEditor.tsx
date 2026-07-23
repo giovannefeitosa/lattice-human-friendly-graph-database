@@ -1884,6 +1884,31 @@ export default function GraphEditor() {
 
   const fitGraph = () => fitNodes(visibleNodes);
 
+  const navigateToInspectorNode = (nodeId: string) => {
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
+    stopPanAnimation();
+    cancelLongPress();
+    closeNodeContextMenu();
+    setPinnedVisibleNodes((current) => new Set(current).add(nodeId));
+    setSelectedNodes(new Set([nodeId]));
+    setSelectedEdges(new Set());
+    setInspectorOpen(true);
+    setNodeNameFocusId(null);
+    setConnectMode(false);
+    setConnectSource(null);
+    setHelpOpen(false);
+    setStatus(`Navegando para ${node.label}`);
+    const canvas = svgRef.current;
+    if (canvas) {
+      setViewport((current) => ({
+        ...current,
+        x: canvas.clientWidth / current.zoom / 2 - node.x,
+        y: canvas.clientHeight / current.zoom / 2 - node.y,
+      }));
+    }
+  };
+
   const focusNodeAndConnections = (nodeId: string) => {
     const node = nodeMap.get(nodeId);
     if (!node) return;
@@ -2617,6 +2642,7 @@ export default function GraphEditor() {
           onDelete={deleteSelection}
           onClose={() => setInspectorOpen(false)}
           onManageCategories={openCategoriesFromEditor}
+          onNavigateNode={navigateToInspectorNode}
           focusNodeName={selectedNode?.id === nodeNameFocusId}
           onNodeNameFocused={() => setNodeNameFocusId(null)}
         />}

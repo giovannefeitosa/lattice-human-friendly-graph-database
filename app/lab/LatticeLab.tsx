@@ -235,6 +235,7 @@ export default function LatticeLab() {
                     }}
                     onClose={() => setInspectorNodeId("")}
                     onManageCategories={() => setStory("node")}
+                    onNavigateNode={setInspectorNodeId}
                   />
                 )}
                 {!inspectorNode && <button className="lab-reopen" onClick={resetInspector}>Reabrir inspetor</button>}
