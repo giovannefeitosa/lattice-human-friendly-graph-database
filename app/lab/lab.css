@@ -7,13 +7,21 @@
   --lab-violet: #826bea;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-columns: 184px minmax(0, 1fr);
   color: #eef1ff;
   background:
     radial-gradient(circle at 62% 0%, rgba(102, 72, 207, .12), transparent 36%),
     var(--lab-bg);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+html:has(.lattice-lab),
+body:has(.lattice-lab) {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
 }
 
 .lattice-lab *,
@@ -28,7 +36,7 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 22px 14px;
+  padding: 14px 10px;
   border-right: 1px solid var(--lab-line);
   background: rgba(7, 10, 22, .92);
   backdrop-filter: blur(24px);
@@ -37,13 +45,13 @@
 .lab-brand {
   display: flex;
   align-items: center;
-  padding: 0 8px 28px;
-  gap: 11px;
+  padding: 0 7px 16px;
+  gap: 9px;
 }
 
 .lab-brand > span {
-  width: 34px;
-  height: 34px;
+  width: 29px;
+  height: 29px;
   display: grid;
   place-items: center;
   border: 1px solid rgba(158, 142, 255, .4);
@@ -86,7 +94,7 @@
 
 .lab-sidebar nav button {
   width: 100%;
-  min-height: 42px;
+  min-height: 36px;
   display: grid;
   grid-template-columns: 24px 1fr auto;
   align-items: center;
@@ -133,7 +141,7 @@
 
 .lab-sidebar-note {
   margin-top: auto;
-  padding: 13px;
+  padding: 10px;
   border: 1px solid var(--lab-line);
   border-radius: 12px;
   background: rgba(16, 21, 43, .54);
@@ -164,14 +172,15 @@
 .lab-content {
   min-width: 0;
   min-height: 100vh;
-  padding: 0 clamp(20px, 4vw, 56px) 60px;
+  padding: 0 clamp(14px, 2.4vw, 30px) 28px;
 }
 
 .lab-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 33px 0 25px;
+  min-height: 58px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--lab-line);
 }
 
@@ -182,15 +191,10 @@
 }
 
 .lab-topbar h1 {
-  margin: 7px 0 3px;
-  font-size: clamp(25px, 3vw, 36px);
+  display: inline;
+  margin: 0 0 0 10px;
+  font-size: 17px;
   letter-spacing: -.04em;
-}
-
-.lab-topbar p {
-  margin: 0;
-  color: var(--lab-muted);
-  font-size: 10px;
 }
 
 .lab-status {
@@ -216,11 +220,11 @@
 
 .lab-controls,
 .lab-inspector-controls {
-  min-height: 70px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
+  padding: 8px 0;
   gap: 16px;
 }
 
@@ -277,21 +281,21 @@
 
 .lab-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: 9px;
 }
 
 .lab-specimen {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--lab-line);
-  border-radius: 14px;
+  border-radius: 10px;
   background: linear-gradient(150deg, rgba(15, 20, 42, .88), rgba(7, 10, 21, .92));
   box-shadow: 0 18px 50px rgba(0, 0, 0, .16);
 }
 
 .lab-specimen-meta {
-  height: 38px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -311,10 +315,10 @@
 }
 
 .lab-specimen-canvas {
-  min-height: 240px;
+  min-height: 190px;
   display: grid;
   place-items: center;
-  padding: 34px 20px;
+  padding: 24px 16px 35px;
   background-color: #070a15;
   background-image:
     radial-gradient(circle at 50% 45%, rgba(100, 73, 197, .11), transparent 39%),
@@ -323,7 +327,7 @@
 }
 
 .lab-specimen footer {
-  min-height: 45px;
+  min-height: 36px;
   display: grid;
   grid-template-columns: 10px 1fr auto;
   align-items: center;
@@ -550,8 +554,9 @@
 }
 
 .lab-inspector-stage {
-  height: min(720px, calc(100vh - 190px));
-  min-height: 540px;
+  min-height: 600px;
+  display: grid;
+  place-items: start center;
   overflow: hidden;
   border: 1px solid var(--lab-line);
   border-radius: 14px;
@@ -559,40 +564,30 @@
 }
 
 .lab-inspector-stage .workspace {
-  height: 100%;
-}
-
-.lab-inspector-canvas {
-  position: relative;
-  min-width: 0;
-  flex: 1;
+  width: 100%;
+  min-height: 600px;
   display: grid;
-  place-items: center;
-  overflow: hidden;
+  place-items: start center;
+  overflow: visible;
   background-color: #070a15;
   background-image:
-    radial-gradient(circle at 50% 45%, rgba(83, 61, 166, .16), transparent 32%),
+    radial-gradient(circle at 50% 20%, rgba(83, 61, 166, .16), transparent 28%),
     radial-gradient(circle, rgba(119, 137, 195, .13) 1px, transparent 1px);
   background-size: auto, 22px 22px;
 }
 
-.lab-selection-kicker {
-  position: absolute;
-  top: 16px;
-  left: 17px;
-  color: #5f6a87;
-  font: 760 8px/1 var(--font-geist-mono), monospace;
-  letter-spacing: .15em;
-}
-
-.lab-selected-node .lab-node-sphere {
-  box-shadow:
-    0 0 0 8px color-mix(in srgb, var(--lab-node-color) 16%, transparent),
-    0 0 26px color-mix(in srgb, var(--lab-node-color) 24%, transparent),
-    inset -13px -15px 24px rgba(0,0,0,.3);
+.lab-inspector-stage.graph-shell .workspace > .inspector {
+  width: 310px;
+  min-width: 310px;
+  max-width: 310px;
+  min-height: 600px;
+  flex-basis: 310px;
+  border-right: 1px solid rgba(145, 164, 230, 0.13);
+  border-left: 1px solid rgba(145, 164, 230, 0.13);
 }
 
 .lab-reopen {
+  align-self: center;
   padding: 10px 13px;
   border: 1px solid rgba(130,107,234,.34);
   border-radius: 9px;
@@ -646,11 +641,11 @@
 
   .lab-content {
     min-height: calc(100vh - 55px);
-    padding-inline: 14px;
+    padding-inline: 10px;
   }
 
   .lab-topbar {
-    padding-top: 24px;
+    padding-top: 10px;
   }
 
   .lab-grid {
@@ -658,23 +653,19 @@
   }
 
   .lab-inspector-stage {
-    height: 720px;
+    min-height: 600px;
   }
 
   .lab-inspector-stage .workspace {
-    flex-direction: column;
-  }
-
-  .lab-inspector-canvas {
-    min-height: 260px;
+    min-height: 600px;
   }
 
   .lab-inspector-stage.graph-shell .workspace > .inspector {
-    width: 100%;
-    min-width: 100%;
-    max-height: 460px;
-    flex-basis: auto;
-    border-top: 1px solid rgba(145, 164, 230, .13);
-    border-left: 0;
+    width: min(100%, 310px);
+    min-width: min(100%, 310px);
+    max-width: 310px;
+    max-height: none;
+    flex-basis: 310px;
+    border-left: 1px solid rgba(145, 164, 230, .13);
   }
 }

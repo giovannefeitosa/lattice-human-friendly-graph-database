@@ -177,7 +177,6 @@ export default function LatticeLab() {
           <div>
             <small>LATTICE LAB / {story === "node" ? "NODE" : "INSPETOR"}</small>
             <h1>{story === "node" ? "Node" : "Inspetor"}</h1>
-            <p>{story === "node" ? "Variações por categoria" : "Janela com nó selecionado"}</p>
           </div>
           <span className="lab-status"><i /> PREVIEW</span>
         </header>
@@ -217,18 +216,6 @@ export default function LatticeLab() {
             </div>
             <div className="lab-inspector-stage graph-shell">
               <div className="workspace">
-                <div className="lab-inspector-canvas">
-                  <span className="lab-selection-kicker">NÓ SELECIONADO</span>
-                  {inspectorNode && (
-                    <div className="lab-selected-node">
-                      <SphereNode
-                        node={inspectorNode}
-                        category={categories.find((category) => category.id === inspectorNode.categoryId) ?? categories[0]}
-                      />
-                    </div>
-                  )}
-                  {!inspectorNode && <button className="lab-reopen" onClick={resetInspector}>Reabrir inspetor</button>}
-                </div>
                 {inspectorNode && (
                   <GraphInspector
                     graph={graph}
@@ -241,6 +228,7 @@ export default function LatticeLab() {
                     onManageCategories={() => setStory("node")}
                   />
                 )}
+                {!inspectorNode && <button className="lab-reopen" onClick={resetInspector}>Reabrir inspetor</button>}
               </div>
             </div>
           </section>
