@@ -152,7 +152,7 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
 
   assert.match(editor, /Criar novo grafo/);
   assert.match(editor, /Categorias personalizadas/);
-  assert.match(editor, /Concept, Person, Event, Note, YouTube Video e HTTP URL são categorias fixas/);
+  assert.match(editor, /Concept, Person, Event, Note, YouTube Video, HTTP URL e SubGrafo são categorias fixas/);
   assert.match(editor, /graph-card-rename/);
   assert.match(editor, /Voltar para Biblioteca[\s\S]*← <span>Biblioteca<\/span>/);
   assert.match(editor, /aria-live="polite"/);
@@ -161,6 +161,22 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
   assert.match(categories, /Nome do grafo · Enter para salvar/);
   assert.match(categories, /"FIXA" : "PERSONALIZADA"/);
   assert.match(styles, /@media \(max-width: 1180px\)[\s\S]*\.graph-shell \.graph-name-input[\s\S]*display: block/);
+});
+
+test("renders SubGrafo nodes with deeplink upsert navigation", async () => {
+  const [editor, styles, graph, route] = await Promise.all([
+    readFile(new URL("../app/components/GraphEditor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/graph.css", import.meta.url), "utf8"),
+    readFile(new URL("../lib/graph.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/graphs/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(graph, /name: "SubGrafo"/);
+  assert.match(editor, /isSubgraphCategory/);
+  assert.match(editor, /subgraph-link-button/);
+  assert.match(editor, /upsertByName: true/);
+  assert.match(styles, /\.subgraph-secondary/);
+  assert.match(route, /payload\.upsertByName/);
+  assert.match(route, /lower\(\$\{graphs\.name\}\) = lower\(\$\{name\}\)/);
 });
 
 test("renders link-preview nodes and exposes the authenticated metadata endpoint", async () => {

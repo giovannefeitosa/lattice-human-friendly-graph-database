@@ -2,6 +2,7 @@ import {
   NOTE_DEFAULT_HEIGHT,
   NOTE_DEFAULT_WIDTH,
   isLinkPreviewCategory,
+  isSubgraphCategory,
   LINK_PREVIEW_HEIGHT,
   LINK_PREVIEW_WIDTH,
   normalizeGraph,
@@ -67,7 +68,11 @@ export function graphThumbnailSvg(input: GraphData | unknown) {
       const height = LINK_PREVIEW_HEIGHT * scale;
       return `<rect x="${(position.x - width / 2).toFixed(1)}" y="${(position.y - height / 2).toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="${Math.max(3, 9 * scale).toFixed(1)}" fill="#101627" stroke="${safeColor(node.color)}" stroke-width="2"/>`;
     }
-    return `<circle cx="${position.x.toFixed(1)}" cy="${position.y.toFixed(1)}" r="${Math.max(7, Math.min(15, 11 * Math.sqrt(scale))).toFixed(1)}" fill="${safeColor(node.color)}" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>`;
+    const radius = Math.max(7, Math.min(15, 11 * Math.sqrt(scale)));
+    if (isSubgraphCategory(node.categoryId)) {
+      return `<circle cx="${position.x.toFixed(1)}" cy="${position.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${safeColor(node.color)}" stroke="#ffffff" stroke-opacity=".3" stroke-width="1.5"/><path d="M${position.x.toFixed(1)} ${(position.y - radius).toFixed(1)}A${radius.toFixed(1)} ${radius.toFixed(1)} 0 0 1 ${position.x.toFixed(1)} ${(position.y + radius).toFixed(1)}L${position.x.toFixed(1)} ${(position.y - radius).toFixed(1)}Z" fill="#9b6ee8" fill-opacity=".5"/>`;
+    }
+    return `<circle cx="${position.x.toFixed(1)}" cy="${position.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${safeColor(node.color)}" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>`;
   }).join("");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}"><rect width="${WIDTH}" height="${HEIGHT}" fill="#080b14"/><path d="M0 55H360M0 110H360M0 165H360M90 0V220M180 0V220M270 0V220" stroke="#20283b" stroke-width="1" opacity=".55"/>${edgeMarkup}${nodeMarkup}</svg>`;

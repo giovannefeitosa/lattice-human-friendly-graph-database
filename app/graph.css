@@ -1975,6 +1975,39 @@ pre.export-code {
   fill: #fff;
 }
 
+.graph-shell .subgraph-node .subgraph-secondary {
+  fill: #9b6ee8;
+  opacity: .46;
+  pointer-events: none;
+}
+
+.graph-shell .subgraph-link-button {
+  cursor: pointer;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .48));
+  outline: none;
+}
+
+.graph-shell .subgraph-link-button > circle {
+  fill: #101627;
+  stroke: rgba(220, 225, 255, .88);
+  stroke-width: 1.5;
+  transition: fill 140ms ease, stroke 140ms ease, transform 140ms ease;
+}
+
+.graph-shell .subgraph-link-button > text {
+  fill: #f6f7ff;
+  font-size: 15px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.graph-shell .subgraph-link-button:hover > circle,
+.graph-shell .subgraph-link-button:focus-visible > circle {
+  fill: #785ed1;
+  stroke: #fff;
+  transform: scale(1.08);
+}
+
 .graph-shell .note-node .note-surface {
   transition: filter 150ms ease, stroke 150ms ease;
 }

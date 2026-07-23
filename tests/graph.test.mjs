@@ -31,9 +31,23 @@ test("accepts only schema v3 and injects all built-in categories", () => {
     { id: "note", name: "Note" },
     { id: "youtube-video", name: "YouTube Video" },
     { id: "http-url", name: "HTTP URL" },
+    { id: "subgraph", name: "SubGrafo" },
   ]);
   assert.throws(() => normalizeGraph({ name: "Legado", nodes: [], edges: [] }), /version must be 3/);
   assert.throws(() => normalizeGraph({ ...emptyGraph(), version: 2 }), /version must be 3/);
+});
+
+test("defines a locked SubGrafo category and migrates a legacy same-name category", () => {
+  const graph = normalizeGraph(emptyGraph({
+    categories: [{ id: "legacy-subgraph", name: "subgrafo", color: "#123456", fields: [] }],
+    nodes: [{ id: "nested", label: "Outro grafo", categoryId: "legacy-subgraph", x: 0, y: 0, properties: {} }],
+  }));
+  assert.deepEqual(graph.categories.find(({ id }) => id === "subgraph"), {
+    id: "subgraph", name: "SubGrafo", color: "#123456", fields: [],
+  });
+  assert.equal(graph.nodes[0].categoryId, "subgraph");
+  assert.throws(() => renameCategoryField(graph, "subgraph", "missing", "renamed"), /fields are locked/);
+  assert.throws(() => removeCustomCategory(graph, "subgraph"), /cannot be deleted/);
 });
 
 test("defines locked URL previews and migrates legacy same-name categories", () => {

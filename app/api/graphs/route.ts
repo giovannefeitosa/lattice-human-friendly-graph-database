@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
@@ -10,6 +10,7 @@ type GraphPayload = {
   id?: string;
   name?: string;
   graph?: unknown;
+  upsertByName?: boolean;
 };
 
 async function ownerEmail() {
@@ -67,8 +68,21 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as GraphPayload;
     const graph = normalizeGraph(payload.graph);
-    const id = crypto.randomUUID();
     const name = payload.name?.trim().slice(0, 120) || graph.name || "Novo grafo";
+    const db = getDb();
+    if (payload.upsertByName) {
+      const [existing] = await db
+        .select({ id: graphs.id, name: graphs.name, updatedAt: graphs.updatedAt })
+        .from(graphs)
+        .where(and(
+          eq(graphs.ownerEmail, owner),
+          sql`lower(${graphs.name}) = lower(${name})`,
+        ))
+        .orderBy(desc(graphs.updatedAt))
+        .limit(1);
+      if (existing) return Response.json({ graph: existing, created: false });
+    }
+    const id = crypto.randomUUID();
     const graphJson = JSON.stringify({ ...graph, name });
     const graphHash = await graphContentHash(graphJson);
     const thumbnailKey = `graphs/${id}/${graphHash}.svg`;
@@ -76,7 +90,6 @@ export async function POST(request: Request) {
       httpMetadata: { contentType: "image/svg+xml; charset=utf-8" },
     });
     const now = new Date().toISOString();
-    const db = getDb();
     await db.batch([
       db.insert(graphs).values({
         id,
@@ -106,7 +119,7 @@ export async function POST(request: Request) {
       }),
     ]);
     const created = { id, name, updatedAt: now };
-    return Response.json({ graph: created }, { status: 201 });
+    return Response.json({ graph: created, created: true }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

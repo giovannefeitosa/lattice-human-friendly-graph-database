@@ -17,6 +17,7 @@ import {
   graphToAiText,
   graphToCypher,
   isLinkPreviewCategory,
+  isSubgraphCategory,
   LINK_PREVIEW_HEIGHT,
   LINK_PREVIEW_WIDTH,
   NOTE_DEFAULT_HEIGHT,
@@ -2022,6 +2023,41 @@ export default function GraphEditor() {
     await loadLibrary();
   };
 
+  const openSubgraph = async (node: GraphNode) => {
+    const name = node.label.trim();
+    if (!name) return;
+    setStatus(`Abrindo subgrafo “${name}”…`);
+    try {
+      if (graphId) {
+        await saveActiveView();
+        const saveResponse = await fetch("/api/graphs", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: graphId, name: graph.name, graph }),
+        });
+        if (!saveResponse.ok) throw new Error("Falha ao salvar o grafo atual.");
+      }
+      const initial = normalizeGraph({
+        name,
+        version: 3,
+        categories: [],
+        nodes: [],
+        edges: [],
+      });
+      const response = await fetch("/api/graphs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, graph: initial, upsertByName: true }),
+      });
+      if (!response.ok) throw new Error("Falha ao localizar o subgrafo.");
+      const payload = (await response.json()) as { graph: { id: string }; created?: boolean };
+      await openGraph(payload.graph.id);
+      setStatus(payload.created ? "Subgrafo criado" : "Subgrafo aberto");
+    } catch {
+      setStatus("Não foi possível abrir o subgrafo");
+    }
+  };
+
   const openCategoriesFromEditor = () => {
     setCategoryReturnScreen("editor");
     setScreen("categories");
@@ -2179,7 +2215,7 @@ export default function GraphEditor() {
             </label>
             <div>
               <strong style={{ display: "block", marginBottom: 5, color: "#dce2f3", fontSize: 12 }}>Categorias personalizadas</strong>
-              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event, Note, YouTube Video e HTTP URL são categorias fixas e serão incluídas automaticamente.</small>
+              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event, Note, YouTube Video, HTTP URL e SubGrafo são categorias fixas e serão incluídas automaticamente.</small>
             </div>
             {createCategoryNames.map((categoryName, index) => (
               <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2446,8 +2482,9 @@ export default function GraphEditor() {
                   const scale = 1 + depth * 0.018;
                   const connectionCount = nodeAdjacency.get(node.id)?.size ?? 0;
                   const expanded = !collapsedNodes.has(node.id);
-                  const isNote = node.categoryId === "note";
-                  const isLinkPreview = isLinkPreviewCategory(node.categoryId);
+                   const isNote = node.categoryId === "note";
+                   const isLinkPreview = isLinkPreviewCategory(node.categoryId);
+                   const isSubgraph = isSubgraphCategory(node.categoryId);
                   const noteWidth = node.width ?? NOTE_DEFAULT_WIDTH;
                   const noteHeight = node.height ?? NOTE_DEFAULT_HEIGHT;
                   const noteHalfWidth = noteWidth / 2;
@@ -2456,7 +2493,7 @@ export default function GraphEditor() {
                   return (
                     <g
                       key={node.id}
-                      className={`node${isNote ? " note-node" : ""}${isLinkPreview ? " link-preview-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
+                      className={`node${isNote ? " note-node" : ""}${isLinkPreview ? " link-preview-node" : ""}${isSubgraph ? " subgraph-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
                       onPointerDown={(event) => { beginNodeDrag(event, node); beginNodeLongPress(event, node.id); }}
@@ -2549,9 +2586,10 @@ export default function GraphEditor() {
                         <circle className="connection-port" cx={LINK_PREVIEW_WIDTH / 2 + 5} cy="0" r="9" />
                       </> : <>
                         <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
-                        {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
-                        <circle r={NODE_RADIUS} fill={node.color} stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
-                        <circle r={NODE_RADIUS - 1} fill="url(#node-surface)" />
+                         {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
+                         <circle r={NODE_RADIUS} fill={node.color} stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 2.5 : 1.5} filter="url(#node-shadow)" />
+                         {isSubgraph && <path className="subgraph-secondary" d={`M 0 ${-NODE_RADIUS} A ${NODE_RADIUS} ${NODE_RADIUS} 0 0 1 0 ${NODE_RADIUS} L 0 ${-NODE_RADIUS} Z`} />}
+                         <circle r={NODE_RADIUS - 1} fill="url(#node-surface)" />
                         <circle cx="-16" cy="-19" r="8" fill="#fff" opacity=".17" />
                         <circle className="connection-port-hit" cx={NODE_RADIUS + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                         <circle className="connection-port" cx={NODE_RADIUS + 5} cy="0" r="9" />
@@ -2572,7 +2610,28 @@ export default function GraphEditor() {
                             toggleNodeExpansion(node.id);
                           }
                         }}
-                      ><circle r="14" /><text textAnchor="middle" dominantBaseline="central">{expanded ? "−" : "+"}</text></g>}
+                       ><circle r="14" /><text textAnchor="middle" dominantBaseline="central">{expanded ? "−" : "+"}</text></g>}
+                       {isSubgraph && <g
+                         className="subgraph-link-button"
+                         transform="translate(-34 34)"
+                         role="button"
+                         tabIndex={0}
+                         aria-label={`Abrir subgrafo ${node.label}`}
+                         onPointerDown={(event) => event.stopPropagation()}
+                         onPointerUp={(event) => event.stopPropagation()}
+                         onClick={(event) => { event.stopPropagation(); void openSubgraph(node); }}
+                         onKeyDown={(event) => {
+                           if (event.key === "Enter" || event.key === " ") {
+                             event.preventDefault();
+                             event.stopPropagation();
+                             void openSubgraph(node);
+                           }
+                         }}
+                       >
+                         <title>Abrir subgrafo “{node.label}”</title>
+                         <circle r="14" />
+                         <text textAnchor="middle" dominantBaseline="central">↗</text>
+                       </g>}
                       {!isNote && !isLinkPreview && <>
                         <text className="node-label" textAnchor="middle" y={NODE_RADIUS + 24}>{node.label}</text>
                         <text className="node-type" textAnchor="middle" y={NODE_RADIUS + 41}>{node.type}</text>
