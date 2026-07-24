@@ -40,7 +40,7 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(inspector, /removeInspectorConnection/);
   assert.match(inspector, /aria-label=\{`Ir para \$\{node\.label\}`\}/);
   assert.match(editor, /onNavigateNode=\{navigateToInspectorNode\}/);
-  assert.match(editor, /setPinnedVisibleNodes\(\(current\) => new Set\(current\)\.add\(nodeId\)\)/);
+  assert.doesNotMatch(editor, /setPinnedVisibleNodes\(\(current\) => new Set\(current\)\.add\(nodeId\)\)/);
   assert.match(categories, /properties[\s\S]*especial\/json/);
   assert.match(categories, /content[\s\S]*especial\/text/);
   assert.match(categories, /removeCustomCategory/);

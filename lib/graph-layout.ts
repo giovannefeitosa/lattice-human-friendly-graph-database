@@ -184,9 +184,17 @@ export function getHierarchicalVisibleNodeIds(
   if (rootId && !graph.nodes.some((node) => node.id === rootId)) return new Set();
 
   const graphNodeIds = new Set(graph.nodes.map((node) => node.id));
+  const childIds = new Set(
+    graph.edges.flatMap((edge) => {
+      const endpoints = graphHierarchyEndpoints(graph, edge);
+      return endpoints ? [endpoints.childId] : [];
+    }),
+  );
   const roots = [
     ...(rootId ? [rootId] : hierarchyRootNodeIds(graph)),
-    ...[...pinnedNodeIds].filter((nodeId) => graphNodeIds.has(nodeId)),
+    ...[...pinnedNodeIds].filter(
+      (nodeId) => graphNodeIds.has(nodeId) && !childIds.has(nodeId),
+    ),
   ];
   const visible = new Set<string>();
   const queue = [...roots];

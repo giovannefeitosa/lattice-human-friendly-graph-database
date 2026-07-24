@@ -109,6 +109,15 @@ test("does not keep a node visible through one of its upward-positioned children
     [...getHierarchicalVisibleNodeIds(directedGraph, null, new Set(["collapsed-parent"]))].sort(),
     ["collapsed-parent", "root"],
   );
+  assert.deepEqual(
+    [...getHierarchicalVisibleNodeIds(
+      directedGraph,
+      null,
+      new Set(["collapsed-parent"]),
+      new Set(["current", "upward-child"]),
+    )].sort(),
+    ["collapsed-parent", "root"],
+  );
 });
 
 test("deduplicates cycles while traversing outgoing descendants", () => {

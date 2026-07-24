@@ -1896,7 +1896,6 @@ export default function GraphEditor() {
     stopPanAnimation();
     cancelLongPress();
     closeNodeContextMenu();
-    setPinnedVisibleNodes((current) => new Set(current).add(nodeId));
     setSelectedNodes(new Set([nodeId]));
     setSelectedEdges(new Set());
     setInspectorOpen(true);
