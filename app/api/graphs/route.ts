@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { graphs, graphViews } from "@/db/schema";
 import { GraphValidationError, normalizeGraph, type GraphData } from "@/lib/graph";
 import { graphContentHash, graphThumbnailSvg } from "@/lib/graph-thumbnail";
+import { restoreLocalGraphsFromR2WhenEmpty } from "@/lib/r2-restore";
 import {
   graphJsonKey,
   graphThumbnailKey,
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
   if (!owner) return Response.json({ error: "Authentication required" }, { status: 401 });
 
   try {
+    await restoreLocalGraphsFromR2WhenEmpty(owner);
     const id = new URL(request.url).searchParams.get("id");
     const db = getDb();
     if (id) {

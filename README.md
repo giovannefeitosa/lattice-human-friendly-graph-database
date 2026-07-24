@@ -91,6 +91,17 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run db:local:setup`: apply the D1 schema to the persistent local database
+
+## Personal R2 development archive
+
+Local development can use the same personal R2 archive as production. Set
+`LATTICE_LOCAL_USER_EMAIL` and the four `LATTICE_R2_*` values in `.dev.vars`,
+apply the local D1 migrations once, then start the app. An empty local D1
+database is reconstructed from the matching user's R2 index, graph, and view
+archives. Existing local rows are not overwritten.
+
+`README--MASTER.md` contains the minimal new-computer setup sequence.
 
 ## Learn More
 

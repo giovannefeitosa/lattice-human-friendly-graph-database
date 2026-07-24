@@ -77,7 +77,7 @@ export function buildNodeAdjacency(graph: Pick<GraphData, "nodes" | "edges">): N
   return adjacency;
 }
 
-/** Builds a visual parent-to-child adjacency index for hierarchical descendants. */
+/** Builds a directed parent-to-child adjacency index for hierarchical descendants. */
 export function buildChildAdjacency(graph: Pick<GraphData, "nodes" | "edges">): NodeAdjacency {
   const adjacency: NodeAdjacency = new Map(
     graph.nodes.map((node) => [node.id, new Set<string>()]),
@@ -133,7 +133,7 @@ export function connectedNodeIds(graph: GraphData, nodeId: string): Set<string> 
   return new Set(buildNodeAdjacency(graph).get(nodeId) ?? []);
 }
 
-/** Returns direct children according to the graph's visual hierarchy. */
+/** Returns direct children according to the graph's directed hierarchy. */
 export function childNodeIds(graph: GraphData, nodeId: string): Set<string> {
   return new Set(buildChildAdjacency(graph).get(nodeId) ?? []);
 }

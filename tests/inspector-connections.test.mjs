@@ -37,14 +37,14 @@ const graph = {
   ],
 };
 
-test("separates visual parents above from visual children below", () => {
+test("separates directed parents from children regardless of position", () => {
   assert.deepEqual(
     inspectorConnections(graph, "current", "parent").map(({ node }) => node.id),
-    ["parent"],
+    ["parent", "reverse"],
   );
   assert.deepEqual(
     inspectorConnections(graph, "current", "child").map(({ node }) => node.id),
-    ["reverse", "child"],
+    ["child"],
   );
 });
 
@@ -55,7 +55,7 @@ test("searches names without case or accents, caps results, and keeps duplicate 
   );
   assert.deepEqual(
     inspectorConnectionCandidates(graph, "current", "parent", "DIRECAO").map(({ id }) => id),
-    ["reverse"],
+    [],
   );
   assert.deepEqual(
     inspectorConnectionCandidates(graph, "current", "child", "mesmo", 20).map(({ id }) => id),

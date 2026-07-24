@@ -7,11 +7,9 @@ export type GraphHierarchyEndpoints = {
   childId: string;
 };
 
-const SAME_LEVEL_TOLERANCE = 1;
-
 /**
- * Resolves the visual hierarchy of an edge. Nodes above are parents and nodes
- * below are children; nearly horizontal edges fall back to source → target.
+ * Resolves the directed hierarchy of an edge.
+ * The source is always the parent and the target is always the child.
  */
 export function graphHierarchyEndpoints(
   graph: Pick<GraphData, "nodes">,
@@ -21,13 +19,7 @@ export function graphHierarchyEndpoints(
   const target = graph.nodes.find((node) => node.id === edge.target);
   if (!source || !target) return null;
 
-  const verticalDelta = target.y - source.y;
-  if (Math.abs(verticalDelta) < SAME_LEVEL_TOLERANCE) {
-    return { parentId: source.id, childId: target.id };
-  }
-  return verticalDelta > 0
-    ? { parentId: source.id, childId: target.id }
-    : { parentId: target.id, childId: source.id };
+  return { parentId: source.id, childId: target.id };
 }
 
 export function graphHierarchyConnectionCounts(

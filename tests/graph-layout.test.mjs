@@ -69,7 +69,7 @@ test("moves only roots and recursively reachable outgoing descendants", () => {
   assert.deepEqual([...descendantNodeIds(childAdjacency, ["a", "c"])].sort(), ["a", "b", "c", "d"]);
 });
 
-test("uses vertical position for hierarchy even when relation arrows point upward", () => {
+test("uses source-to-target hierarchy regardless of vertical position", () => {
   const spatialGraph = {
     nodes: [
       node("parent", 0, -100),
@@ -86,8 +86,29 @@ test("uses vertical position for hierarchy even when relation arrows point upwar
   const children = buildChildAdjacency(spatialGraph);
 
   assert.deepEqual([...children.get("parent")], ["current"]);
-  assert.deepEqual([...children.get("current")].sort(), ["child-a", "child-b"]);
-  assert.deepEqual([...children.get("child-a")], []);
+  assert.deepEqual([...children.get("current")], ["child-b"]);
+  assert.deepEqual([...children.get("child-a")], ["current"]);
+});
+
+test("does not keep a node visible through one of its upward-positioned children", () => {
+  const directedGraph = {
+    nodes: [
+      node("root", 0, 0),
+      node("collapsed-parent", 0, 100),
+      node("current", 0, 300),
+      node("upward-child", 0, 200),
+    ],
+    edges: [
+      { id: "root-parent", source: "root", target: "collapsed-parent" },
+      { id: "parent-current", source: "collapsed-parent", target: "current" },
+      { id: "current-child", source: "current", target: "upward-child" },
+    ],
+  };
+
+  assert.deepEqual(
+    [...getHierarchicalVisibleNodeIds(directedGraph, null, new Set(["collapsed-parent"]))].sort(),
+    ["collapsed-parent", "root"],
+  );
 });
 
 test("deduplicates cycles while traversing outgoing descendants", () => {

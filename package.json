@@ -11,7 +11,8 @@
     "start": "vinext start",
     "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/graph.test.mjs tests/graph-layout.test.mjs tests/editor-history.test.mjs tests/graph-guides.test.mjs tests/link-preview.test.mjs tests/inspector-connections.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:local:setup": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
