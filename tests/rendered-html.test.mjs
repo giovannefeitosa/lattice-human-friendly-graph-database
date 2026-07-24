@@ -73,7 +73,7 @@ test("includes the requested editor and category capabilities", async () => {
   assert.match(graph, /graph\.version must be 3/);
   assert.match(graph, /properties\.content = node\.content/);
   assert.match(hosting, /"d1": "DB"/);
-  assert.match(hosting, /"r2": "THUMBNAILS"/);
+  assert.match(hosting, /"r2": null/);
   assert.match(schema, /sqliteTable\(\s*"graphs"/);
 });
 
@@ -159,7 +159,7 @@ test("keeps graph creation, naming, categories, and back navigation explicit", a
 
   assert.match(editor, /Criar novo grafo/);
   assert.match(editor, /Categorias personalizadas/);
-  assert.match(editor, /Concept, Person, Event, Note, YouTube Video, HTTP URL e SubGrafo são categorias fixas/);
+  assert.match(editor, /Concept, Person, Event, Note, YouTube Video, HTTP URL, SubGrafo e PDF são categorias fixas/);
   assert.match(editor, /graph-card-rename/);
   assert.match(editor, /Voltar para Biblioteca[\s\S]*← <span>Biblioteca<\/span>/);
   assert.match(editor, /aria-live="polite"/);

@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
 import { graphs, graphViews } from "@/db/schema";
+import { graphViewsKey, personalR2PutJson } from "@/lib/personal-r2";
 
 type Point = { x: number; y: number; z?: number };
 type Viewport = { x: number; y: number; zoom: number };
@@ -138,6 +139,22 @@ function clientView(row: StoredView) {
   };
 }
 
+async function saveViewsArchive(owner: string, graphId: string) {
+  const rows = await getDb()
+    .select()
+    .from(graphViews)
+    .where(eq(graphViews.graphId, graphId))
+    .orderBy(desc(graphViews.isPrimary), asc(graphViews.createdAt));
+  await personalR2PutJson(await graphViewsKey(owner, graphId), {
+    format: "lattice-views",
+    schemaVersion: 1,
+    graphId,
+    ownerEmail: owner,
+    updatedAt: new Date().toISOString(),
+    views: rows.map(clientView),
+  });
+}
+
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
   if (error instanceof ViewPayloadError) return Response.json({ error: message }, { status: 400 });
@@ -170,6 +187,7 @@ export async function GET(request: Request) {
       .from(graphViews)
       .where(eq(graphViews.graphId, graphId))
       .orderBy(desc(graphViews.isPrimary), asc(graphViews.createdAt));
+    await saveViewsArchive(owner, graphId);
     return Response.json({ views: rows.map(clientView) });
   } catch (error) {
     return errorResponse(error);
@@ -205,6 +223,7 @@ export async function POST(request: Request) {
         updatedAt: now,
       })
       .returning();
+    await saveViewsArchive(owner, graphId);
     return Response.json({ view: clientView(created) }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -247,6 +266,7 @@ export async function PUT(request: Request) {
       })
       .where(and(eq(graphViews.id, id), eq(graphViews.graphId, graphId)))
       .returning();
+    await saveViewsArchive(owner, graphId);
     return Response.json({ view: clientView(updated) });
   } catch (error) {
     return errorResponse(error);
@@ -274,6 +294,7 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "The primary view cannot be deleted" }, { status: 409 });
     }
     await getDb().delete(graphViews).where(and(eq(graphViews.id, id), eq(graphViews.graphId, graphId)));
+    await saveViewsArchive(owner, graphId);
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);

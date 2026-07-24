@@ -73,8 +73,9 @@ export const LINK_PREVIEW_HEIGHT = 150;
 export const LINK_PREVIEW_CATEGORY_IDS = ["youtube-video", "http-url"] as const;
 export type LinkPreviewCategoryId = (typeof LINK_PREVIEW_CATEGORY_IDS)[number];
 export const SUBGRAPH_CATEGORY_ID = "subgraph" as const;
+export const PDF_CATEGORY_ID = "pdf" as const;
 
-export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event", "note", ...LINK_PREVIEW_CATEGORY_IDS, SUBGRAPH_CATEGORY_ID] as const;
+export const BUILT_IN_CATEGORY_IDS = ["concept", "person", "event", "note", ...LINK_PREVIEW_CATEGORY_IDS, SUBGRAPH_CATEGORY_ID, PDF_CATEGORY_ID] as const;
 export type BuiltInCategoryId = (typeof BUILT_IN_CATEGORY_IDS)[number];
 
 const PERSON_FIELDS: CategoryField[] = [
@@ -104,6 +105,7 @@ export const BUILT_IN_CATEGORIES: ReadonlyArray<NodeCategory> = [
   { id: "youtube-video", name: "YouTube Video", color: "#ff0000", fields: URL_FIELDS },
   { id: "http-url", name: "HTTP URL", color: "#38bdf8", fields: URL_FIELDS },
   { id: SUBGRAPH_CATEGORY_ID, name: "SubGrafo", color: "#6d8cff", fields: [] },
+  { id: PDF_CATEGORY_ID, name: "PDF", color: "#ef4444", fields: [] },
 ];
 
 export function isBuiltInCategory(id: string): id is BuiltInCategoryId {
@@ -118,6 +120,10 @@ export function isSubgraphCategory(id: string): id is typeof SUBGRAPH_CATEGORY_I
   return id === SUBGRAPH_CATEGORY_ID;
 }
 
+export function isPdfCategory(id: string): id is typeof PDF_CATEGORY_ID {
+  return id === PDF_CATEGORY_ID;
+}
+
 export const defaultGraph: GraphData = {
   name: "Action & Dopamine",
   version: 3,
@@ -129,6 +135,7 @@ export const defaultGraph: GraphData = {
     { id: "youtube-video", name: "YouTube Video", color: "#ff0000", fields: URL_FIELDS },
     { id: "http-url", name: "HTTP URL", color: "#38bdf8", fields: URL_FIELDS },
     { id: SUBGRAPH_CATEGORY_ID, name: "SubGrafo", color: "#6d8cff", fields: [] },
+    { id: PDF_CATEGORY_ID, name: "PDF", color: "#ef4444", fields: [] },
     { id: "brain-region", name: "BrainRegion", color: "#8ba6ff", fields: [] },
     { id: "trait", name: "Trait", color: "#ff8e8e", fields: [] },
   ],
@@ -369,7 +376,7 @@ function migrateSpecialBuiltInCategories(root: Record<string, unknown>): Record<
   const aliases = new Map<string, BuiltInCategoryId>();
   let categories = [...root.categories];
 
-  for (const categoryId of [...LINK_PREVIEW_CATEGORY_IDS, SUBGRAPH_CATEGORY_ID]) {
+  for (const categoryId of [...LINK_PREVIEW_CATEGORY_IDS, SUBGRAPH_CATEGORY_ID, PDF_CATEGORY_ID]) {
     const template = BUILT_IN_CATEGORIES.find((category) => category.id === categoryId)!;
     const matches = categories.filter((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -431,7 +438,7 @@ function normalizeCategories(root: Record<string, unknown>): NodeCategory[] {
     if (names.has(nameKey)) throw new GraphValidationError(`Duplicate category name: "${category.name}".`);
     ids.add(category.id);
     names.add(nameKey);
-    if ((category.id === "concept" || category.id === "note" || isSubgraphCategory(category.id)) && category.fields.length !== 0) {
+    if ((category.id === "concept" || category.id === "note" || isSubgraphCategory(category.id) || isPdfCategory(category.id)) && category.fields.length !== 0) {
       throw new GraphValidationError(`${category.name} cannot define custom fields.`);
     }
     if (category.id === "event" && JSON.stringify(category.fields) !== JSON.stringify(EVENT_FIELDS)) {

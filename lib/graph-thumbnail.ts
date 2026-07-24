@@ -2,6 +2,7 @@ import {
   NOTE_DEFAULT_HEIGHT,
   NOTE_DEFAULT_WIDTH,
   isLinkPreviewCategory,
+  isPdfCategory,
   isSubgraphCategory,
   LINK_PREVIEW_HEIGHT,
   LINK_PREVIEW_WIDTH,
@@ -67,6 +68,9 @@ export function graphThumbnailSvg(input: GraphData | unknown) {
       const width = LINK_PREVIEW_WIDTH * scale;
       const height = LINK_PREVIEW_HEIGHT * scale;
       return `<rect x="${(position.x - width / 2).toFixed(1)}" y="${(position.y - height / 2).toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="${Math.max(3, 9 * scale).toFixed(1)}" fill="#101627" stroke="${safeColor(node.color)}" stroke-width="2"/>`;
+    }
+    if (isPdfCategory(node.categoryId)) {
+      return `<path d="M${(position.x - 10).toFixed(1)} ${(position.y - 14).toFixed(1)}H${(position.x + 5).toFixed(1)}L${(position.x + 11).toFixed(1)} ${(position.y - 8).toFixed(1)}V${(position.y + 14).toFixed(1)}H${(position.x - 10).toFixed(1)}Z" fill="#fff" stroke="${safeColor(node.color)}" stroke-width="2"/><rect x="${(position.x - 8).toFixed(1)}" y="${(position.y + 1).toFixed(1)}" width="17" height="8" rx="2" fill="${safeColor(node.color)}"/>`;
     }
     const radius = Math.max(7, Math.min(15, 11 * Math.sqrt(scale)));
     if (isSubgraphCategory(node.categoryId)) {

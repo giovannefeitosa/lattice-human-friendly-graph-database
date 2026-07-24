@@ -1975,6 +1975,123 @@ pre.export-code {
   fill: #fff;
 }
 
+.graph-shell .pdf-file-badge {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  pointer-events: none;
+}
+
+.graph-shell .pdf-file-surface,
+.graph-shell .pdf-file-fold {
+  transition: filter .16s ease, stroke .16s ease;
+}
+
+.pdf-attachment-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(239, 68, 68, .28);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(239, 68, 68, .1), rgba(15, 20, 35, .78));
+}
+
+.pdf-attachment-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pdf-attachment-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pdf-attachment-heading small {
+  color: #fca5a5;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.pdf-attachment-heading strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-attachment-heading span {
+  color: #98a3ba;
+  font-size: 10px;
+}
+
+.pdf-file-icon {
+  position: relative;
+  display: grid;
+  width: 40px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: end center;
+  padding-bottom: 7px;
+  border: 2px solid #ef4444;
+  border-radius: 5px;
+  background: #fff;
+  clip-path: polygon(0 0, 72% 0, 100% 23%, 100% 100%, 0 100%);
+}
+
+.pdf-file-icon i {
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .05em;
+}
+
+.pdf-attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pdf-attachment-actions a,
+.pdf-attachment-actions button {
+  min-height: 32px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .06);
+  color: #eef2ff;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.pdf-attachment-actions a:hover,
+.pdf-attachment-actions button:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, .6);
+  background: rgba(239, 68, 68, .16);
+}
+
+.pdf-attachment-actions .danger-text {
+  color: #fca5a5;
+}
+
+.pdf-attachment-panel > p {
+  margin: 0;
+  color: #bac3d6;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .graph-shell .node-connection-indicator {
   pointer-events: none;
   filter: drop-shadow(0 4px 7px rgba(0, 0, 0, .62));

@@ -32,9 +32,22 @@ test("accepts only schema v3 and injects all built-in categories", () => {
     { id: "youtube-video", name: "YouTube Video" },
     { id: "http-url", name: "HTTP URL" },
     { id: "subgraph", name: "SubGrafo" },
+    { id: "pdf", name: "PDF" },
   ]);
   assert.throws(() => normalizeGraph({ name: "Legado", nodes: [], edges: [] }), /version must be 3/);
   assert.throws(() => normalizeGraph({ ...emptyGraph(), version: 2 }), /version must be 3/);
+});
+
+test("defines a locked PDF category and migrates a legacy same-name category", () => {
+  const graph = normalizeGraph(emptyGraph({
+    categories: [{ id: "document", name: "pdf", color: "#cc2222", fields: [] }],
+    nodes: [{ id: "paper", label: "Artigo", categoryId: "document", x: 0, y: 0, properties: {} }],
+  }));
+  assert.deepEqual(graph.categories.find(({ id }) => id === "pdf"), {
+    id: "pdf", name: "PDF", color: "#cc2222", fields: [],
+  });
+  assert.equal(graph.nodes[0].categoryId, "pdf");
+  assert.throws(() => removeCustomCategory(graph, "pdf"), /cannot be deleted/);
 });
 
 test("defines a locked SubGrafo category and migrates a legacy same-name category", () => {

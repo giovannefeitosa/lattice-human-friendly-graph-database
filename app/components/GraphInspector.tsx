@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CategoryField, GraphData, GraphEdge, GraphNode, GraphValue } from "@/lib/graph";
+import { isPdfCategory, type CategoryField, type GraphData, type GraphEdge, type GraphNode, type GraphValue } from "@/lib/graph";
 import {
   addInspectorConnection,
   inspectorConnectionCandidates,
@@ -13,6 +13,7 @@ import {
 type GraphUpdate = GraphData | ((current: GraphData) => GraphData);
 type Props = {
   graph: GraphData;
+  graphId: string | null;
   selectedNode: GraphNode | null;
   selectedEdge?: GraphEdge | null;
   onCommit: (next: GraphUpdate) => void;
@@ -153,6 +154,121 @@ function connectionId() {
   return `edge_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function readableFileSize(value: unknown) {
+  const bytes = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function PdfAttachmentPanel({
+  graphId,
+  node,
+  onUpdate,
+}: {
+  graphId: string | null;
+  node: GraphNode;
+  onUpdate: (patch: Partial<GraphNode>) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const objectKey = typeof node.properties.pdfObjectKey === "string" ? node.properties.pdfObjectKey : "";
+  const fileName = typeof node.properties.pdfFileName === "string" ? node.properties.pdfFileName : "";
+  const downloadUrl = graphId && objectKey
+    ? `/api/attachments/pdf?graphId=${encodeURIComponent(graphId)}&key=${encodeURIComponent(objectKey)}&name=${encodeURIComponent(fileName || "documento.pdf")}`
+    : "";
+
+  const upload = async (file: File | undefined) => {
+    if (!file || !graphId) {
+      if (!graphId) setMessage("Salve o grafo antes de enviar um PDF.");
+      return;
+    }
+    setBusy(true);
+    setMessage("Enviando para seu bucket…");
+    try {
+      const form = new FormData();
+      form.set("graphId", graphId);
+      form.set("nodeId", node.id);
+      form.set("file", file);
+      if (objectKey) form.set("previousKey", objectKey);
+      const response = await fetch("/api/attachments/pdf", { method: "POST", body: form });
+      const payload = await response.json() as {
+        attachment?: { id: string; key: string; fileName: string; size: number; uploadedAt: string };
+        error?: string;
+      };
+      if (!response.ok || !payload.attachment) throw new Error(payload.error || "Falha ao enviar o PDF.");
+      const properties = {
+        ...node.properties,
+        pdfAttachmentId: payload.attachment.id,
+        pdfObjectKey: payload.attachment.key,
+        pdfFileName: payload.attachment.fileName,
+        pdfSize: payload.attachment.size,
+        pdfUploadedAt: payload.attachment.uploadedAt,
+      };
+      const defaultLabel = node.label === "Novo conceito" || node.label === "Novo PDF";
+      onUpdate({
+        properties,
+        ...(defaultLabel ? { label: payload.attachment.fileName.replace(/\.pdf$/i, "") } : {}),
+      });
+      setMessage("PDF armazenado no seu bucket lattice.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao enviar o PDF.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const remove = async () => {
+    if (!graphId || !objectKey || busy) return;
+    setBusy(true);
+    setMessage("Removendo…");
+    try {
+      const response = await fetch(`/api/attachments/pdf?graphId=${encodeURIComponent(graphId)}&key=${encodeURIComponent(objectKey)}`, { method: "DELETE" });
+      if (!response.ok && response.status !== 404) throw new Error("Falha ao remover o PDF.");
+      const properties = { ...node.properties };
+      delete properties.pdfAttachmentId;
+      delete properties.pdfObjectKey;
+      delete properties.pdfFileName;
+      delete properties.pdfSize;
+      delete properties.pdfUploadedAt;
+      onUpdate({ properties });
+      setMessage("PDF removido.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao remover o PDF.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <section className="pdf-attachment-panel" aria-label="Arquivo PDF">
+    <input
+      ref={fileRef}
+      type="file"
+      accept="application/pdf,.pdf"
+      hidden
+      onChange={(event) => void upload(event.target.files?.[0])}
+    />
+    <div className="pdf-attachment-heading">
+      <span className="pdf-file-icon" aria-hidden="true"><i>PDF</i></span>
+      <div>
+        <small>ARQUIVO PDF</small>
+        <strong>{fileName || "Nenhum arquivo enviado"}</strong>
+        {objectKey && <span>{readableFileSize(node.properties.pdfSize)}</span>}
+      </div>
+    </div>
+    <div className="pdf-attachment-actions">
+      {downloadUrl && <a href={downloadUrl} target="_blank" rel="noreferrer">Abrir PDF</a>}
+      <button type="button" disabled={busy || !graphId} onClick={() => fileRef.current?.click()}>
+        {objectKey ? "Substituir" : "Enviar PDF"}
+      </button>
+      {objectKey && <button type="button" className="danger-text" disabled={busy} onClick={() => void remove()}>Remover</button>}
+    </div>
+    {message && <p role="status">{message}</p>}
+  </section>;
+}
+
 function InspectorConnections({
   graph,
   selectedNode,
@@ -289,7 +405,7 @@ function InspectorConnections({
   </section>;
 }
 
-export default function GraphInspector({ graph, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, onNavigateNode, focusNodeName = false, onNodeNameFocused }: Props) {
+export default function GraphInspector({ graph, graphId, selectedNode, selectedEdge = null, onCommit, onDelete, onClose, onManageCategories, onNavigateNode, focusNodeName = false, onNodeNameFocused }: Props) {
   const [propertyError, setPropertyError] = useState("");
   const propertyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -355,6 +471,7 @@ export default function GraphInspector({ graph, selectedNode, selectedEdge = nul
         <span aria-hidden="true">▦</span>
         <span className="custom-tooltip tooltip-right" id="tooltip-manage-categories" role="tooltip"><strong>Gerenciar categorias</strong><span>Editar tipos e propriedades dos nós</span></span>
       </button>
+      {selectedCategory && isPdfCategory(selectedCategory.id) && <PdfAttachmentPanel graphId={graphId} node={selectedNode} onUpdate={updateSelectedNode} />}
       <InspectorConnections graph={graph} selectedNode={selectedNode} direction="parent" onCommit={onCommit} onNavigateNode={onNavigateNode} />
       <InspectorConnections graph={graph} selectedNode={selectedNode} direction="child" onCommit={onCommit} onNavigateNode={onNavigateNode} />
       <label>Profundidade<CommittedValueInput type="number" min="-10" max="10" value={String(selectedNode.z || 0)} onCommit={(value) => updateSelectedNode({ z: Number(value) })} /></label>

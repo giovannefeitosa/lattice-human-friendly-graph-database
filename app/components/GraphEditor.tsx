@@ -17,6 +17,7 @@ import {
   graphToAiText,
   graphToCypher,
   isLinkPreviewCategory,
+  isPdfCategory,
   isSubgraphCategory,
   LINK_PREVIEW_HEIGHT,
   LINK_PREVIEW_WIDTH,
@@ -2219,7 +2220,7 @@ export default function GraphEditor() {
             </label>
             <div>
               <strong style={{ display: "block", marginBottom: 5, color: "#dce2f3", fontSize: 12 }}>Categorias personalizadas</strong>
-              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event, Note, YouTube Video, HTTP URL e SubGrafo são categorias fixas e serão incluídas automaticamente.</small>
+              <small style={{ color: "#78849d", lineHeight: 1.5 }}>Concept, Person, Event, Note, YouTube Video, HTTP URL, SubGrafo e PDF são categorias fixas e serão incluídas automaticamente.</small>
             </div>
             {createCategoryNames.map((categoryName, index) => (
               <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2491,6 +2492,7 @@ export default function GraphEditor() {
                    const isNote = node.categoryId === "note";
                    const isLinkPreview = isLinkPreviewCategory(node.categoryId);
                    const isSubgraph = isSubgraphCategory(node.categoryId);
+                   const isPdf = isPdfCategory(node.categoryId);
                   const noteWidth = node.width ?? NOTE_DEFAULT_WIDTH;
                   const noteHeight = node.height ?? NOTE_DEFAULT_HEIGHT;
                   const noteHalfWidth = noteWidth / 2;
@@ -2499,7 +2501,7 @@ export default function GraphEditor() {
                   return (
                     <g
                       key={node.id}
-                      className={`node${isNote ? " note-node" : ""}${isLinkPreview ? " link-preview-node" : ""}${isSubgraph ? " subgraph-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
+                      className={`node${isNote ? " note-node" : ""}${isLinkPreview ? " link-preview-node" : ""}${isSubgraph ? " subgraph-node" : ""}${isPdf ? " pdf-node" : ""}${selected ? " selected" : ""}${connectSource === node.id ? " source" : ""}${connectMode && connectSource && connectSource !== node.id ? " connection-target" : ""}`}
                       data-node-id={node.id}
                       transform={`translate(${node.x} ${node.y}) scale(${scale})`}
                       onPointerDown={(event) => { beginNodeDrag(event, node); beginNodeLongPress(event, node.id); }}
@@ -2590,6 +2592,15 @@ export default function GraphEditor() {
                         </foreignObject>
                         <circle className="connection-port-hit" cx={LINK_PREVIEW_WIDTH / 2 + 5} cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
                         <circle className="connection-port" cx={LINK_PREVIEW_WIDTH / 2 + 5} cy="0" r="9" />
+                      </> : isPdf ? <>
+                        <ellipse cy="47" rx="38" ry="14" fill="#000" opacity=".34" filter="url(#node-shadow)" />
+                        {selected && <rect x="-45" y="-54" width="90" height="105" rx="12" fill="none" stroke={node.color} strokeOpacity=".3" strokeWidth="8" filter="url(#node-glow)" />}
+                        <path className="pdf-file-surface" d="M -34 -46 H 17 L 36 -27 V 43 H -34 Z" fill="#fff" stroke={selected ? "#fff" : node.color} strokeWidth={selected ? 3 : 2} filter="url(#node-shadow)" />
+                        <path className="pdf-file-fold" d="M 17 -46 V -27 H 36" fill="#fecaca" stroke={node.color} strokeWidth="2" />
+                        <rect x="-25" y="4" width="52" height="25" rx="6" fill={node.color} />
+                        <text className="pdf-file-badge" textAnchor="middle" dominantBaseline="central" x="1" y="17">PDF</text>
+                        <circle className="connection-port-hit" cx="41" cy="0" r="22" fill="transparent" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => handleConnectionPort(event, node)} />
+                        <circle className="connection-port" cx="41" cy="0" r="9" />
                       </> : <>
                         <ellipse cy="38" rx="40" ry="15" fill="#000" opacity=".34" filter="url(#node-shadow)" />
                          {selected && <circle r={NODE_RADIUS + 10} fill="none" stroke={node.color} strokeOpacity=".28" strokeWidth="8" filter="url(#node-glow)" />}
@@ -2641,7 +2652,7 @@ export default function GraphEditor() {
                       })}
                       {connectionCount > 0 && <g
                         className={`node-visibility-toggle${expanded ? " open" : ""}`}
-                        transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : isLinkPreview ? `translate(${LINK_PREVIEW_WIDTH / 2 - 10} ${-LINK_PREVIEW_HEIGHT / 2 + 10})` : "translate(38 -38)"}
+                        transform={isNote ? `translate(${noteHalfWidth - 10} ${-noteHalfHeight + 10})` : isLinkPreview ? `translate(${LINK_PREVIEW_WIDTH / 2 - 10} ${-LINK_PREVIEW_HEIGHT / 2 + 10})` : isPdf ? "translate(39 -45)" : "translate(38 -38)"}
                         role="button"
                         tabIndex={0}
                         aria-label={`${expanded ? "Ocultar" : "Expandir"} conexões de ${node.label}`}
@@ -2740,6 +2751,7 @@ export default function GraphEditor() {
 
         {inspectorVisible && <GraphInspector
           graph={graph}
+          graphId={graphId}
           selectedNode={selectedNode}
           selectedEdge={selectedEdge}
           onCommit={commitGraph}
