@@ -11,6 +11,7 @@ import {
 } from "d3-force";
 
 import type { GraphData, GraphNode } from "./graph";
+import { graphHierarchyEndpoints } from "./graph-hierarchy.ts";
 
 export interface GraphLayoutOptions {
   centerX?: number;
@@ -76,14 +77,15 @@ export function buildNodeAdjacency(graph: Pick<GraphData, "nodes" | "edges">): N
   return adjacency;
 }
 
-/** Builds a source-to-target adjacency index for hierarchical descendants. */
+/** Builds a visual parent-to-child adjacency index for hierarchical descendants. */
 export function buildChildAdjacency(graph: Pick<GraphData, "nodes" | "edges">): NodeAdjacency {
   const adjacency: NodeAdjacency = new Map(
     graph.nodes.map((node) => [node.id, new Set<string>()]),
   );
   for (const edge of graph.edges) {
-    const children = adjacency.get(edge.source);
-    if (children && adjacency.has(edge.target)) children.add(edge.target);
+    const endpoints = graphHierarchyEndpoints(graph, edge);
+    if (!endpoints) continue;
+    adjacency.get(endpoints.parentId)?.add(endpoints.childId);
   }
   return adjacency;
 }
@@ -131,19 +133,17 @@ export function connectedNodeIds(graph: GraphData, nodeId: string): Set<string> 
   return new Set(buildNodeAdjacency(graph).get(nodeId) ?? []);
 }
 
-/** Returns only outgoing neighbours: the direct children in the hierarchy. */
+/** Returns direct children according to the graph's visual hierarchy. */
 export function childNodeIds(graph: GraphData, nodeId: string): Set<string> {
-  return new Set(
-    graph.edges
-      .filter((edge) => edge.source === nodeId)
-      .map((edge) => edge.target),
-  );
+  return new Set(buildChildAdjacency(graph).get(nodeId) ?? []);
 }
 
 function hierarchyRootNodeIds(graph: GraphData): string[] {
   const incomingCount = new Map(graph.nodes.map((node) => [node.id, 0]));
   for (const edge of graph.edges) {
-    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+    const endpoints = graphHierarchyEndpoints(graph, edge);
+    if (!endpoints) continue;
+    incomingCount.set(endpoints.childId, (incomingCount.get(endpoints.childId) ?? 0) + 1);
   }
 
   const roots = graph.nodes

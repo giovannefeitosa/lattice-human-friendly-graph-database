@@ -8,13 +8,13 @@ const {
   removeInspectorConnection,
 } = await import("../lib/inspector-connections.ts");
 
-const node = (id, label) => ({
+const node = (id, label, y = 0) => ({
   id,
   label,
   categoryId: "concept",
   type: "Concept",
   x: 0,
-  y: 0,
+  y,
   properties: {},
   color: "#ffffff",
 });
@@ -24,9 +24,9 @@ const graph = {
   categories: [{ id: "concept", name: "Concept", color: "#ffffff", fields: [] }],
   nodes: [
     node("current", "Nó atual"),
-    node("parent", "Árvore"),
-    node("child", "Zebra"),
-    node("reverse", "Direção inversa"),
+    node("parent", "Árvore", -100),
+    node("child", "Zebra", 100),
+    node("reverse", "Direção inversa", 100),
     node("duplicate-a", "Mesmo nome"),
     node("duplicate-b", "Mesmo nome"),
   ],
@@ -37,14 +37,14 @@ const graph = {
   ],
 };
 
-test("separates incoming parents from outgoing children", () => {
+test("separates visual parents above from visual children below", () => {
   assert.deepEqual(
     inspectorConnections(graph, "current", "parent").map(({ node }) => node.id),
-    ["parent", "reverse"],
+    ["parent"],
   );
   assert.deepEqual(
     inspectorConnections(graph, "current", "child").map(({ node }) => node.id),
-    ["child"],
+    ["reverse", "child"],
   );
 });
 
@@ -55,7 +55,7 @@ test("searches names without case or accents, caps results, and keeps duplicate 
   );
   assert.deepEqual(
     inspectorConnectionCandidates(graph, "current", "parent", "DIRECAO").map(({ id }) => id),
-    [],
+    ["reverse"],
   );
   assert.deepEqual(
     inspectorConnectionCandidates(graph, "current", "child", "mesmo", 20).map(({ id }) => id),

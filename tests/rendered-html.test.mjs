@@ -132,6 +132,7 @@ test("includes focused editing and integrated exploration behaviors", async () =
   assert.doesNotMatch(editor, /id="delete-selection"/);
   assert.match(editor, /\{connectionCount > 0 && <g/);
   assert.match(editor, /directionalConnectionCounts/);
+  assert.match(editor, /graphHierarchyConnectionCounts/);
   assert.match(editor, /node-connection-indicator/);
   assert.match(editor, /parentCount === 1 \? "1 pai"/);
   assert.match(editor, /childCount === 1 \? "1 filho"/);

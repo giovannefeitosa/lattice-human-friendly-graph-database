@@ -43,6 +43,7 @@ import {
   type HistoryState,
 } from "@/lib/editor-history";
 import { calculateSmartGuides, type SmartGuideLine } from "@/lib/graph-guides";
+import { graphHierarchyConnectionCounts } from "@/lib/graph-hierarchy";
 import {
   buildChildAdjacency,
   buildNodeAdjacency,
@@ -1323,15 +1324,7 @@ export default function GraphEditor() {
     [graph],
   );
   const directionalConnectionCounts = useMemo(() => {
-    const parents = new Map(graph.nodes.map((node) => [node.id, 0]));
-    const children = new Map(graph.nodes.map((node) => [node.id, 0]));
-    for (const edge of graph.edges) {
-      if (children.has(edge.source) && parents.has(edge.target)) {
-        children.set(edge.source, (children.get(edge.source) ?? 0) + 1);
-        parents.set(edge.target, (parents.get(edge.target) ?? 0) + 1);
-      }
-    }
-    return { parents, children };
+    return graphHierarchyConnectionCounts(graph);
   }, [graph.edges, graph.nodes]);
   const displayNodes = useMemo(
     () => graph.nodes.map((node) => {

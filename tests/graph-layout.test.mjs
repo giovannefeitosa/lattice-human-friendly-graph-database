@@ -69,6 +69,27 @@ test("moves only roots and recursively reachable outgoing descendants", () => {
   assert.deepEqual([...descendantNodeIds(childAdjacency, ["a", "c"])].sort(), ["a", "b", "c", "d"]);
 });
 
+test("uses vertical position for hierarchy even when relation arrows point upward", () => {
+  const spatialGraph = {
+    nodes: [
+      node("parent", 0, -100),
+      node("current", 0, 0),
+      node("child-a", 0, 100),
+      node("child-b", 0, 200),
+    ],
+    edges: [
+      { id: "pc", source: "parent", target: "current" },
+      { id: "ac", source: "child-a", target: "current" },
+      { id: "cb", source: "current", target: "child-b" },
+    ],
+  };
+  const children = buildChildAdjacency(spatialGraph);
+
+  assert.deepEqual([...children.get("parent")], ["current"]);
+  assert.deepEqual([...children.get("current")].sort(), ["child-a", "child-b"]);
+  assert.deepEqual([...children.get("child-a")], []);
+});
+
 test("deduplicates cycles while traversing outgoing descendants", () => {
   const cyclic = {
     nodes: [node("a"), node("b"), node("c"), node("parent")],

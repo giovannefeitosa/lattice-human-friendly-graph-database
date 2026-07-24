@@ -1,4 +1,5 @@
 import type { GraphData, GraphEdge, GraphNode } from "./graph";
+import { graphHierarchyEndpoints } from "./graph-hierarchy.ts";
 
 export type InspectorConnectionDirection = "parent" | "child";
 
@@ -31,11 +32,14 @@ export function inspectorConnections(
 ): InspectorConnection[] {
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
   return graph.edges
-    .filter((edge) => direction === "parent"
-      ? edge.target === currentNodeId
-      : edge.source === currentNodeId)
     .flatMap((edge) => {
-      const nodeId = direction === "parent" ? edge.source : edge.target;
+      const endpoints = graphHierarchyEndpoints(graph, edge);
+      if (!endpoints) return [];
+      const matches = direction === "parent"
+        ? endpoints.childId === currentNodeId
+        : endpoints.parentId === currentNodeId;
+      if (!matches) return [];
+      const nodeId = direction === "parent" ? endpoints.parentId : endpoints.childId;
       const node = nodeMap.get(nodeId);
       return node ? [{ edge, node }] : [];
     })
